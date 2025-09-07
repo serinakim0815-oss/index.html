@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Masked-only Preview (Original Hidden)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; line-height: 1.6; }
+    h1 { font-size: 20px; margin-bottom: 10px; }
+    .controls { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:14px 0; }
+    button, select, input[type="file"] { padding:8px 10px; border:1px solid #ddd; border-radius:8px; background:#fff; cursor:pointer; }
+    button:hover { filter:brightness(0.98); }
+    .box { border:1px solid #eee; border-radius:12px; padding:14px; margin:14px 0; }
+    .page { margin:10px 0 16px; }
+    .page h3 { margin:0 0 6px; font-size:14px; color:#333; }
+    .preview { white-space:pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background:#fafafa; border:1px solid #eee; border-radius:8px; padding:12px; }
+    .muted { color:#666; font-size:13px; }
+    .chips { display:flex; gap:8px; flex-wrap:wrap; margin:6px 0 0; }
+    .chip { background:#f4f6ff; border:1px solid #e1e6ff; border-radius:999px; padding:4px 8px; font-size:12px; }
+    .red { color: red; } /* 화면에서만 빨간 별표 */
+  </style>
+  <!-- PDF.js (텍스트 추출만 사용) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    }
+  </script>
+</head>
+<body>
+  <h1>마스킹 결과 미리보기</h1>
+  <div class="muted">원본 PDF/텍스트는 절대 노출되지 않으며, 마스킹된 결과만 표시됩니다.</div>
+
+  <div class="controls">
+    <input type="file" id="fileInput" accept=".pdf,.txt,text/plain,application/pdf" />
+    <select id="mode">
+      <option value="stars" selected>별표치환(*)</option>
+      <option value="partial">부분마스킹(끝자리 보존)</option>
+      <option value="token">토큰치환([EMAIL])</option>
+    </select>
+    <button id="btnProcess">처리하기</button>
+    <button id="btnCopy" disabled>모두 복사</button>
+    <button id="btnDownload" disabled>다운로드</button>
+  </div>
+
+  <div class="box">
+    <b>태그 통계</b>
+    <div id="stats" class="chips"></div>
+  </div>
+
+  <div id="pages" class="box">
+    <div class="page">
+      <h3>미리보기</h3>
+      <div class="preview">파일을 선택한 뒤 “처리하기”를 눌러주세요.</div>
+    </div>
+  </div>
+
+  <script>
+    // 정규식 정의
+    const EMAIL = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+    const PHONE_AU = /(\+?61\s?)?0?4\d{2}[\s-]?\d{3}[\s-]?\d{3}\b/g;
+    const CARD = /\b(?:\d[ -]*?){13,19}\b/g;
+    const BSB = /\b\d{3}-?\d{3}\b/g;
+    const ABN = /\b(\d\s?){11}\b/g;
+    const ACN = /\b\d{9}\b/g;
+    const POSTCODE_AU = /\b\d{4}\b/g;
+    const RULES = [
+      { re: EMAIL, token: 'EMAIL' },
+      { re: PHONE_AU, token: 'PHONE' },
+      { re: CARD, token: 'CARD' },
+      { re: BSB, token: 'BSB' },
+      { re: ABN, token: 'ABN' },
+      { re: ACN, token: 'ACN' },
+      { re: POSTCODE_AU, token: 'POSTCODE' },
+    ];
+
+    // HTML 안전 처리
+    function escapeHTML(s) {
+      return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    }
+
+    // 화면 표시용: 빨간 별표
+    function maskStarsHTML(s) {
+      return s.replace(/[A-Za-z0-9]/g, '<span class="red">*</span>');
+    }
+    // 복사/다운로드용: 일반 별표
+    function maskStarsPlain(s) {
+      return s.replace(/[A-Za-z0-9]/g, '*');
+    }
+
+    function maskDigitsPreserveFormat(s, keepLastN) {
+      const digits = s.replace(/\D/g, '');
+      const keep = Math.max(0, Math.min(keepLastN, digits.length));
+      const cutoff = digits.length - keep;
+      let seen=0, out='';
+      for (const ch of s) {
+        if (/\d/.test(ch)) out += (seen++ < cutoff) ? '*' : ch;
+        else out += ch;
+      }
+      return out;
+    }
+    function maskEmailPartial(s) {
+      const at = s.indexOf('@');
+      if (at <= 0) return '***';
+      const local = s.slice(0, at);
+      const domain = s.slice(at+1);
+      const stars = '*'.repeat(Math.max(3, Math.min(local.length, 6)));
+      return `${stars}@${domain}`;
+    }
+    function maskByMode(type, text, mode) {
+      if (mode === 'partial') {
+        switch(type) {
+          case 'EMAIL': return maskEmailPartial(text);
+          case 'PHONE': return maskDigitsPreserveFormat(text,3);
+          case 'CARD': return maskDigitsPreserveFormat(text,4);
+          case 'BSB': return maskDigitsPreserveFormat(text,2);
+          case 'ABN': return maskDigitsPreserveFormat(text,3);
+          case 'ACN': return maskDigitsPreserveFormat(text,3);
+          case 'POSTCODE': return maskDigitsPreserveFormat(text,2);
+          default: return text;
+        }
+      }
+      // token 모드
+      if (mode === 'token') return `[${type}]`;
+      // stars 모드는 별도 처리
+      return text;
+    }
+
+    function applyMask(pageText, mode) {
+      const matches=[];
+      for (const { re, token } of RULES) {
+        re.lastIndex=0; let m;
+        while ((m=re.exec(pageText))!==null) {
+          matches.push({ start:m.index, end:m.index+m[0].length, text:m[0], token });
+        }
+      }
+      if (!matches.length) {
+        // 화면은 HTML이므로 원문은 escape 해서 넣기
+        return { maskedHTML: escapeHTML(pageText), maskedPlain: pageText, counts:{} };
+      }
+
+      matches.sort((a,b)=>a.start-b.start);
+      const compact=[]; let lastEnd=-1;
+      for(const m of matches){ if(m.start>=lastEnd){compact.push(m); lastEnd=m.end;} }
+
+      let htmlOut='', plainOut='', cursor=0, counts={};
+      for(const m of compact){
+        // 사이 구간(비매치)은 그대로 (HTML은 escape)
+        if(cursor<m.start){
+          const gap = pageText.slice(cursor,m.start);
+          htmlOut += escapeHTML(gap);
+          plainOut += gap;
+        }
+
+        let htmlMasked, plainMasked;
+        if (mode === 'stars') {
+          htmlMasked = maskStarsHTML(m.text);           // 화면: 빨간 별표
+          plainMasked = maskStarsPlain(m.text);         // 복사/다운: 일반 별표
+        } else if (mode === 'partial') {
+          const p = maskByMode(m.token, m.text, 'partial');
+          htmlMasked = escapeHTML(p);                   // 부분마스킹은 색없이 그대로
+          plainMasked = p;
+        } else { // token
+          const t = `[${m.token}]`;
+          htmlMasked = escapeHTML(t);
+          plainMasked = t;
+        }
+
+        htmlOut += htmlMasked;
+        plainOut += plainMasked;
+        counts[m.token]=(counts[m.token]||0)+1;
+        cursor=m.end;
+      }
+      // 남은 꼬리
+      htmlOut += escapeHTML(pageText.slice(cursor));
+      plainOut += pageText.slice(cursor);
+
+      return { maskedHTML: htmlOut, maskedPlain: plainOut, counts };
+    }
+
+    async function extractTextPages(file){
+      const name=(file.name||'').toLowerCase();
+      const isPDF=name.endsWith('.pdf')||file.type==='application/pdf';
+      if(!isPDF){ return [await file.text()]; }
+      const buf=await file.arrayBuffer();
+      const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+      const pages=[];
+      for(let p=1;p<=pdf.numPages;p++){
+        const page=await pdf.getPage(p);
+        const content=await page.getTextContent();
+        const text=content.items.map(i=>i.str).join(' ')+'\n';
+        pages.push(text);
+      }
+      return pages;
+    }
+
+    const $=id=>document.getElementById(id);
+    let lastMaskedAll='';
+
+    function renderStats(countsAll){
+      const stats=$('stats'); stats.innerHTML='';
+      const keys=Object.keys(countsAll).filter(k=>countsAll[k]>0);
+      if(!keys.length){ stats.innerHTML='<span class="muted">탐지된 항목 없음</span>'; return; }
+      for(const k of keys){
+        const chip=document.createElement('span');
+        chip.className='chip'; chip.textContent=`${k}: ${countsAll[k]}`;
+        stats.appendChild(chip);
+      }
+    }
+
+    $('btnProcess').addEventListener('click', async ()=>{
+      const file=($('fileInput').files||[])[0];
+      if(!file) return alert('파일을 선택하세요.');
+      $('pages').innerHTML='<div class="page"><div class="preview">처리 중...</div></div>';
+      $('btnCopy').disabled=true; $('btnDownload').disabled=true;
+
+      try{
+        const pages=await extractTextPages(file);
+        const mode=$('mode').value;
+        let allCounts={}, joined=[];
+
+        $('pages').innerHTML='';
+        pages.forEach((t,idx)=>{
+          const {maskedHTML, maskedPlain, counts}=applyMask(t,mode);
+          for(const k in counts) allCounts[k]=(allCounts[k]||0)+counts[k];
+
+          const page=document.createElement('div');
+          page.className='page';
+          const h=document.createElement('h3'); h.textContent=`페이지 ${idx+1}`;
+          const pre=document.createElement('div'); pre.className='preview';
+          pre.innerHTML = maskedHTML;        // 화면: 빨간 별표 포함 HTML
+          page.appendChild(h); page.appendChild(pre);
+          $('pages').appendChild(page);
+
+          joined.push(maskedPlain);          // 복사/다운: 일반 별표 버전
+        });
+        lastMaskedAll=joined.join('\n---- PAGE SEP ----\n');
+        renderStats(allCounts);
+        $('btnCopy').disabled=false; $('btnDownload').disabled=false;
+      }catch(e){
+        console.error(e);
+        $('pages').innerHTML='<div class="page"><div class="preview">오류: '+(e?.message||e)+'</div></div>';
+      }
+    });
+
+    $('btnCopy').addEventListener('click',async()=>{
+      if(!lastMaskedAll) return;
+      try{await navigator.clipboard.writeText(lastMaskedAll); alert('마스킹 텍스트가 복사되었습니다.');}
+      catch{alert('복사 권한을 허용해주세요.');}
+    });
+
+    $('btnDownload').addEventListener('click',()=>{
+      if(!lastMaskedAll) return;
+      const blob=new Blob([lastMaskedAll],{type:'text/plain;charset=utf-8'});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a'); a.href=url; a.download='masked.txt';
+      document.body.appendChild(a); a.click();
+      setTimeout(()=>{URL.revokeObjectURL(url); document.body.removeChild(a);},0);
+    });
+  </script>
+</body>
+</html>
