@@ -2,24 +2,34 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <title>Masked-only Preview (Original Hidden)</title>
+  <title>Masked-only Preview — Numbered Sections + Dropbox Upload (No Inputs)</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; line-height: 1.6; }
-    h1 { font-size: 20px; margin-bottom: 10px; }
-    .controls { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:14px 0; }
-    button, select, input[type="file"] { padding:8px 10px; border:1px solid #ddd; border-radius:8px; background:#fff; cursor:pointer; }
+    :root { color-scheme: light; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; line-height: 1.75; color:#222; }
+    .container { max-width: 960px; margin: 0 auto; }
+    h1 { font-size: 22px; margin-bottom: 8px; }
+    .controls { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin:14px 0; }
+    .field { display:flex; flex-direction:column; gap:6px; }
+    .field label { font-size:12px; color:#555; }
+    input[type="file"], select { padding:8px 12px; border:1px solid #ddd; border-radius:10px; background:#fff; }
+    button { padding:10px 14px; border:1px solid #ddd; border-radius:10px; background:#fff; cursor:pointer; }
     button:hover { filter:brightness(0.98); }
-    .box { border:1px solid #eee; border-radius:12px; padding:14px; margin:14px 0; }
-    .page { margin:10px 0 16px; }
-    .page h3 { margin:0 0 6px; font-size:14px; color:#333; }
-    .preview { white-space:pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background:#fafafa; border:1px solid #eee; border-radius:8px; padding:12px; }
+    .box { border:1px solid #eee; border-radius:14px; padding:14px; margin:14px 0; background:#fff; }
+    .page { margin:14px 0 18px; }
+    .page h3 { margin:0 0 10px; font-size:15px; color:#444; }
+    .preview { background:#fafafa; border:1px solid #eee; border-radius:12px; padding:18px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+    .preview p { margin:0 0 12px; }
+    .preview h4 { font-size:16px; margin:16px 0 8px; color:#222; }
+    .preview ul, .preview ol { margin: 0 0 12px 22px; padding: 0; }
+    .preview li { margin: 4px 0; }
+    .section { padding: 8px 0; border-top: 1px dashed #eee; }
+    .section:first-child { border-top: 0; }
     .muted { color:#666; font-size:13px; }
     .chips { display:flex; gap:8px; flex-wrap:wrap; margin:6px 0 0; }
     .chip { background:#f4f6ff; border:1px solid #e1e6ff; border-radius:999px; padding:4px 8px; font-size:12px; }
-    .red { color: red; } /* 화면에서만 빨간 별표 */
+    .red { color: red; }
   </style>
-  <!-- PDF.js (텍스트 추출만 사용) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script>
     if (window.pdfjsLib) {
@@ -29,19 +39,34 @@
   </script>
 </head>
 <body>
+<div class="container">
   <h1>마스킹 결과 미리보기</h1>
-  <div class="muted">원본 PDF/텍스트는 절대 노출되지 않으며, 마스킹된 결과만 표시됩니다.</div>
+  <div class="muted">넘버링 기준 섹션 분리 · 주소/연락처/이메일/금액 마스킹. 결과를 Dropbox로 전송할 수 있습니다.</div>
 
-  <div class="controls">
-    <input type="file" id="fileInput" accept=".pdf,.txt,text/plain,application/pdf" />
-    <select id="mode">
-      <option value="stars" selected>별표치환(*)</option>
-      <option value="partial">부분마스킹(끝자리 보존)</option>
-      <option value="token">토큰치환([EMAIL])</option>
-    </select>
-    <button id="btnProcess">처리하기</button>
-    <button id="btnCopy" disabled>모두 복사</button>
-    <button id="btnDownload" disabled>다운로드</button>
+  <div class="controls box">
+    <div class="field">
+      <label for="fileInput">파일 선택 (PDF/TXT)</label>
+      <input type="file" id="fileInput" accept=".pdf,.txt,text/plain,application/pdf" />
+    </div>
+
+    <div class="field">
+      <label for="mode">마스킹 모드</label>
+      <select id="mode">
+        <option value="stars" selected>별표치환(*)</option>
+        <option value="partial">부분마스킹(끝자리 보존)</option>
+        <option value="token">토큰치환([EMAIL])</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>&nbsp;</label>
+      <button id="btnProcess" type="button">처리하기</button>
+    </div>
+
+    <div class="field">
+      <label>&nbsp;</label>
+      <button id="btnSend" type="button" disabled>보내기 (Dropbox)</button>
+    </div>
   </div>
 
   <div class="box">
@@ -55,147 +80,309 @@
       <div class="preview">파일을 선택한 뒤 “처리하기”를 눌러주세요.</div>
     </div>
   </div>
+</div>
 
-  <script>
-    // 정규식 정의
-    const EMAIL = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
-    const PHONE_AU = /(\+?61\s?)?0?4\d{2}[\s-]?\d{3}[\s-]?\d{3}\b/g;
-    const CARD = /\b(?:\d[ -]*?){13,19}\b/g;
-    const BSB = /\b\d{3}-?\d{3}\b/g;
-    const ABN = /\b(\d\s?){11}\b/g;
-    const ACN = /\b\d{9}\b/g;
-    const POSTCODE_AU = /\b\d{4}\b/g;
-    const RULES = [
-      { re: EMAIL, token: 'EMAIL' },
-      { re: PHONE_AU, token: 'PHONE' },
-      { re: CARD, token: 'CARD' },
-      { re: BSB, token: 'BSB' },
-      { re: ABN, token: 'ABN' },
-      { re: ACN, token: 'ACN' },
-      { re: POSTCODE_AU, token: 'POSTCODE' },
-    ];
+<script>
+  /* ====== 하드코딩된 Dropbox 설정 (테스트/내부용 전용) ====== */
+  const DROPBOX_TOKEN  = 'sl.u.AF-D3ViMOxGpKWvXkYd4Lre3PBqqq5TLeZWm7FpJFM5LYnz5zQV_H7ZTJl6tU2pZJsIp56darsDkYb-gH9L033MaDhPzKVd3Gp_W8ccZPsB6khsRSc2tm_xVZLVqCSSuh6mq5esAWENcqT26HVkmThig9PLndBMwGOq1XUlHd_k62c8Ca95nFr992738Mi7-0dzSlA_LDHXZ5-jc6mikDEqDFSVSA_QhNFhMuPm6sElXteF64fEvO_fKEnbCkKBHp3yXTH3CIHLtpGAfbZzWyTqzNYNg1sR1m8ijzPKX96PE5HgSrFBPNTBQhuRJs73t-mvBV4mMXJnfctNQkkgIABoYxkWAdJ16MNtroEGGr8te1l3PLUra72fGxDYsghcKaxbEMObweW0Fx1DmagjAPQL8BV1q5IRgHeK3P-TfzKGX5wWZotvQ2O9g-W1InIqD65HLFRYkABfrsBdHR83JWRl_KhcSDPiIJj_F2ADyRitWZSXXkBkyN4rFYO7aEaAiPJlYXqjEm5taypnpQx6pxZ55ziSPAcMIGeVagB1XAnSKeysErelSMZ6GK-5z0qhG7jHrJZXl4JmzSQN-gqBxWC9Um2MILfzeFW6T5GLE5subx-AofarLXF5jzHSj1zcT2ssdkrUXG8JP00cWjHXII-u7NfrZtfu26GYxj-ejbaLwW9pfzI0o1-XYPqVNkaPZpKdN1Xy0tuzMFIycHcZ8FT1fsGFu8jOASyFU5YE2WiZoSgyOeEEMg3TzrZS3I-nvXtPhEdAOce3ACCLGEOM3aO1QeeBOg9pX7JXbpHiTg0sGLvg5ZH_EDZKj1fC-3Zgc2IFW1wbSD95TsMIyycxWqEPLnAD01Drlzr9GMRq3a6biBjLXhVgGBcttlXItdQLFJRKVrC2IwJGZVK93LIq30DiyUlnsTLZfu2QBTTWgrJK2pUKAy7e9A6MLJORnCs5eD_X0doZ01R-FC2Cw6o0y9oiPcmZzm6KznF1cZpVrt0JPQ6dQ_AmDHgtO5Cz3EIZDq2JAEIO-s1ybYThR15BhGM9TDBcNCvcFjfrTxgVbjVl8gETC9-5qsbbZowvLuCPeXVCzvhISVfnq22MpQjx9lfTDSEE0Fks10_hlBS2L5c1P3uj2xWnmXLtcsH4BLmn_JofaZb5QiSA67cR7nY2C7mtNTrkYG9D3hE1Qf4jw6O9NZ9dCu4yUe7MEgR3pPguk35ritu8J6xHK4PynYlLHPVw5VPGEsuYXXf8sLDnI_37krgCexuzNlj_gjwoZyTFSEbOJADWqTy_b73gZzRBAf1OpynEQugYIYUvq8zOC5Pgs8wh4H0k9riUTRNebAPV0QwYrK6yoPS2zYnqcsp2Of1fcDrqm19PJClkAgPRKejKPjl7_ytmBTvdB7xgPVsIKqIhVFIYb2gMGj-dVQbAvqI9jtJI9iSmGsrnqj1ljYNeN2Tk-yhNlo666B1FbECIdTrN05sC6is-O4O-N9tnIRmb1';
+  const DROPBOX_FOLDER = '/AIR140925'; // 업로드 대상 폴더(절대경로)
 
-    // HTML 안전 처리
-    function escapeHTML(s) {
-      return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  /* ---------- 전역 에러 노출 ---------- */
+  window.addEventListener('error', (e) => {
+    const pages = document.getElementById('pages');
+    if (pages) {
+      pages.innerHTML = '<div class="page"><div class="preview">오류: '
+        + (e?.error?.message || e.message || '알 수 없는 오류')
+        + '</div></div>';
     }
+    console.error('Global Error:', e.error || e.message || e);
+  });
 
-    // 화면 표시용: 빨간 별표
-    function maskStarsHTML(s) {
-      return s.replace(/[A-Za-z0-9]/g, '<span class="red">*</span>');
-    }
-    // 복사/다운로드용: 일반 별표
-    function maskStarsPlain(s) {
-      return s.replace(/[A-Za-z0-9]/g, '*');
-    }
+  /* ---------- 유틸 ---------- */
+  function escapeHTML(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+  function paintStars(htmlEscaped) { return htmlEscaped.replace(/\*/g, '<span class="red">*</span>'); }
 
-    function maskDigitsPreserveFormat(s, keepLastN) {
-      const digits = s.replace(/\D/g, '');
-      const keep = Math.max(0, Math.min(keepLastN, digits.length));
-      const cutoff = digits.length - keep;
-      let seen=0, out='';
-      for (const ch of s) {
-        if (/\d/.test(ch)) out += (seen++ < cutoff) ? '*' : ch;
-        else out += ch;
-      }
-      return out;
-    }
-    function maskEmailPartial(s) {
-      const at = s.indexOf('@');
-      if (at <= 0) return '***';
-      const local = s.slice(0, at);
-      const domain = s.slice(at+1);
-      const stars = '*'.repeat(Math.max(3, Math.min(local.length, 6)));
-      return `${stars}@${domain}`;
-    }
-    function maskByMode(type, text, mode) {
-      if (mode === 'partial') {
-        switch(type) {
-          case 'EMAIL': return maskEmailPartial(text);
-          case 'PHONE': return maskDigitsPreserveFormat(text,3);
-          case 'CARD': return maskDigitsPreserveFormat(text,4);
-          case 'BSB': return maskDigitsPreserveFormat(text,2);
-          case 'ABN': return maskDigitsPreserveFormat(text,3);
-          case 'ACN': return maskDigitsPreserveFormat(text,3);
-          case 'POSTCODE': return maskDigitsPreserveFormat(text,2);
-          default: return text;
+  /* ---------- 넘버링 기반 구조화 렌더러 ---------- */
+  function buildStructuredHTML(maskedPlain) {
+    const normalized = maskedPlain
+      .replace(/\u00A0|\u202F/g, ' ')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n');
+
+    const lines = normalized.split(/\n/);
+    const numberRegex = /^\s*(?:\(?((?:\d{1,3}(?:\.\d{1,3})*|[IVXLCDM]+|[①-⑳]|[❶-❿]|[⓵-⓾]))\)?)[\.\)\-–—]?\s*(.*)$/i;
+
+    const sections = [];
+    let current = null;
+    let waitingTitleFor = null;
+
+    for (const raw of lines) {
+      const line = raw.trimEnd();
+      if (!line.trim()) continue;
+
+      const m = line.match(numberRegex);
+      if (m) {
+        if (current) sections.push(current);
+        const num = String(m[1]).trim();
+        const titleInline = (m[2] || '').trim();
+        current = { num, title: '', body: [] };
+        if (titleInline) {
+          current.title = titleInline;
+          waitingTitleFor = null;
+        } else {
+          waitingTitleFor = current;
         }
+        continue;
       }
-      // token 모드
-      if (mode === 'token') return `[${type}]`;
-      // stars 모드는 별도 처리
-      return text;
+
+      if (waitingTitleFor && line.trim()) {
+        waitingTitleFor.title = line.trim();
+        waitingTitleFor = null;
+        continue;
+      }
+
+      if (!current) current = { num: null, title: '기타', body: [] };
+      current.body.push(line);
     }
+    if (current) sections.push(current);
 
-    function applyMask(pageText, mode) {
-      const matches=[];
-      for (const { re, token } of RULES) {
-        re.lastIndex=0; let m;
-        while ((m=re.exec(pageText))!==null) {
-          matches.push({ start:m.index, end:m.index+m[0].length, text:m[0], token });
-        }
-      }
-      if (!matches.length) {
-        // 화면은 HTML이므로 원문은 escape 해서 넣기
-        return { maskedHTML: escapeHTML(pageText), maskedPlain: pageText, counts:{} };
-      }
+    const bulletRegex = /^\s*(?:[-•*]\s+|\u2022\s+|\u25CF\s+|\u25E6\s+)/;
+    const orderedRegex = /^\s*(\d+)\.\s+/;
+    const labelRegex = /^\s*([\p{L}\p{N}()[\]\/\-\s.]+?)\s*[:：]\s*(.+)$/u;
 
-      matches.sort((a,b)=>a.start-b.start);
-      const compact=[]; let lastEnd=-1;
-      for(const m of matches){ if(m.start>=lastEnd){compact.push(m); lastEnd=m.end;} }
+    function renderBody(lines) {
+      const blocks = [];
+      let i = 0;
+      while (i < lines.length) {
+        const line = lines[i];
 
-      let htmlOut='', plainOut='', cursor=0, counts={};
-      for(const m of compact){
-        // 사이 구간(비매치)은 그대로 (HTML은 escape)
-        if(cursor<m.start){
-          const gap = pageText.slice(cursor,m.start);
-          htmlOut += escapeHTML(gap);
-          plainOut += gap;
+        if (orderedRegex.test(line)) {
+          const items = [];
+          while (i < lines.length && orderedRegex.test(lines[i])) {
+            items.push(lines[i].replace(orderedRegex, ''));
+            i++;
+          }
+          blocks.push('<ol>' + items.map(t => '<li>' + paintStars(escapeHTML(t)) + '</li>').join('') + '</ol>');
+          continue;
         }
 
-        let htmlMasked, plainMasked;
-        if (mode === 'stars') {
-          htmlMasked = maskStarsHTML(m.text);           // 화면: 빨간 별표
-          plainMasked = maskStarsPlain(m.text);         // 복사/다운: 일반 별표
-        } else if (mode === 'partial') {
-          const p = maskByMode(m.token, m.text, 'partial');
-          htmlMasked = escapeHTML(p);                   // 부분마스킹은 색없이 그대로
-          plainMasked = p;
-        } else { // token
-          const t = `[${m.token}]`;
-          htmlMasked = escapeHTML(t);
-          plainMasked = t;
+        if (bulletRegex.test(line)) {
+          const items = [];
+          while (i < lines.length && bulletRegex.test(lines[i])) {
+            items.push(lines[i].replace(bulletRegex, ''));
+            i++;
+          }
+          blocks.push('<ul>' + items.map(t => '<li>' + paintStars(escapeHTML(t)) + '</li>').join('') + '</ul>');
+          continue;
         }
 
-        htmlOut += htmlMasked;
-        plainOut += plainMasked;
-        counts[m.token]=(counts[m.token]||0)+1;
-        cursor=m.end;
-      }
-      // 남은 꼬리
-      htmlOut += escapeHTML(pageText.slice(cursor));
-      plainOut += pageText.slice(cursor);
+        const kv = line.match(labelRegex);
+        if (kv) {
+          const label = kv[1], value = kv[2];
+          blocks.push('<p><strong>' + paintStars(escapeHTML(label + ':')) + '</strong> ' + paintStars(escapeHTML(value)) + '</p>');
+          i++;
+          continue;
+        }
 
-      return { maskedHTML: htmlOut, maskedPlain: plainOut, counts };
+        const buf = [line]; i++;
+        while (i < lines.length && !orderedRegex.test(lines[i]) && !bulletRegex.test(lines[i]) && !labelRegex.test(lines[i])) {
+          if (!lines[i].trim()) break;
+          buf.push(lines[i]); i++;
+        }
+        blocks.push('<p>' + paintStars(escapeHTML(buf.join(' '))) + '</p>');
+      }
+      return blocks.join('\n');
     }
 
-    async function extractTextPages(file){
-      const name=(file.name||'').toLowerCase();
-      const isPDF=name.endsWith('.pdf')||file.type==='application/pdf';
-      if(!isPDF){ return [await file.text()]; }
+    return sections.map(sec => {
+      let html = '<div class="section">';
+      const safeTitle = sec.title && sec.title.trim() ? sec.title : '';
+      if (sec.num && safeTitle) {
+        html += `<h4>${sec.num}. ${paintStars(escapeHTML(safeTitle))}</h4>`;
+      } else if (sec.num) {
+        html += `<h4>${sec.num}.</h4>`;
+      } else {
+        html += `<h4>${paintStars(escapeHTML(safeTitle || 'Misc'))}</h4>`;
+      }
+      if (sec.body.length) html += renderBody(sec.body);
+      html += '</div>';
+      return html;
+    }).join('\n');
+  }
+
+  /* ---------- 탐지 정규식 (보강판) ---------- */
+  const EMAIL = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+  const PHONE_GENERIC = /\+?\d[\d\s().-]{6,}\d/g;
+  const PHONE_AU = /(\+?61\s?)?0?4\d{2}[\s-]?\d{3}[\s-]?\d{3}\b/g;
+  const PHONE_KR = /\b0(1[016789]|2|[3-6][1-5])[-\s.]?\d{3,4}[-\s.]?\d{4}\b/g;
+  const AMOUNT = /(?:₩\s*|KRW\s*|AUD\s*|USD\s*|\$)\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?:\s*원)?|\d{1,3}(?:,\d{3})+\s*원/gi;
+  const POSTCODE_KR = /\b\d{5}\b/g;
+  const POSTCODE_AU = /\b\d{4}\b/g;
+
+  const ADDRESS_KR_STREET_ANYWHERE =
+    /(?:[가-힣]{2,}(시|도|특별시|광역시)\s*)?(?:[가-힣]{2,}(구|군)\s*)?[가-힣0-9\- ]{1,30}(동|읍|면|리|로|길|번길|대로|가)\s*[0-9\-]+(?:호|층)?/g;
+
+  const ADDRESS_KR_BUILDING_ANYWHERE =
+    /(아파트|빌딩|타워|오피스텔|상가|단지|레지던스|주상복합|주공|자이|래미안|힐스테이트|아이파크)[^\n]{0,80}?(동|호|층|호수|호실)/g;
+
+  const ADDRESS_LABEL_LINE =
+    /^(?=.{4,240}$).*?(주소\s*:|Address\s*:)[^\n]*$/gmi;
+
+  const ADDRESS_AU_FULL =
+    /\b\d{1,5}[A-Za-z0-9\-]*\s+[A-Za-z][A-Za-z.'\- ]+\s(?:St|Street|Rd|Road|Ave|Avenue|Blvd|Boulevard|Dr|Drive|Lane|Ln|Way|Pl|Place|Ct|Court|Cres|Crescent|Hwy|Highway)\b[^\n,]*,\s*[A-Za-z][A-Za-z.'\- ]+\s+(NSW|VIC|QLD|SA|WA|TAS|NT|ACT)\s+\d{4}\b/gi;
+
+  const ADDRESS_AU_UNIT =
+    /\b(Unit|Suite|Apt|Apartment|Level|Lvl|Lot|Flat|Room|Bldg|Building|Tower|Block|Blk)\s*[A-Za-z0-9\-]+(?:\/\d{1,5})?\s*[A-Za-z0-9\- ]{0,10}\s+[A-Za-z][A-Za-z.'\- ]+\s(?:St|Street|Rd|Road|Ave|Avenue|Blvd|Boulevard|Dr|Drive|Lane|Ln|Way|Pl|Place|Ct|Court|Cres|Crescent|Hwy|Highway)\b[^\n,]*,\s*[A-Za-z][A-Za-z.'\- ]+\s+(NSW|VIC|QLD|SA|WA|TAS|NT|ACT)\s+\d{4}\b/gi;
+
+  const ADDRESS_AU_SUBURB_STATE_PC =
+    /\b[A-Za-z][A-Za-z.'\- ]+\s+(NSW|VIC|QLD|SA|WA|TAS|NT|ACT)\s+\d{4}\b/gi;
+
+  const ADDRESS_KR_STREET_LINE =
+    /^(?=.{6,240}$).*?(시|도|특별시|광역시).*(구|군).*(동|읍|면|리|로|길|번길|대로|가|번지).*\d.*$/gmi;
+
+  const ADDRESS_EN_STREET_LINE =
+    /^(?=.{8,240}$).*?\b\d{1,5}[A-Za-z0-9\-]*\s+[A-Za-z0-9.'\- ]+\b(St|Street|Rd|Road|Ave|Avenue|Blvd|Boulevard|Dr|Drive|Lane|Ln|Way|Pl|Place|Ct|Court|Cres|Crescent|Hwy|Highway)\b.*?(?:\b(NSW|VIC|QLD|SA|WA|TAS|NT|ACT)\b| \d{4}\b)?.*$/gmi;
+
+  const RULES = [
+    { re: ADDRESS_LABEL_LINE,        token: 'ADDRESS_LINE' },
+    { re: ADDRESS_KR_STREET_LINE,    token: 'ADDRESS_LINE' },
+    { re: ADDRESS_EN_STREET_LINE,    token: 'ADDRESS_LINE' },
+
+    { re: ADDRESS_KR_STREET_ANYWHERE,   token: 'ADDRESS' },
+    { re: ADDRESS_KR_BUILDING_ANYWHERE, token: 'ADDRESS' },
+    { re: ADDRESS_AU_FULL,              token: 'ADDRESS' },
+    { re: ADDRESS_AU_UNIT,              token: 'ADDRESS' },
+    { re: ADDRESS_AU_SUBURB_STATE_PC,   token: 'ADDRESS' },
+
+    { re: EMAIL,          token: 'EMAIL' },
+    { re: PHONE_AU,       token: 'PHONE' },
+    { re: PHONE_KR,       token: 'PHONE' },
+    { re: PHONE_GENERIC,  token: 'PHONE' },
+    { re: AMOUNT,         token: 'AMOUNT' },
+    { re: POSTCODE_KR,    token: 'POSTCODE' },
+    { re: POSTCODE_AU,    token: 'POSTCODE' },
+  ];
+
+  function starPlain(s){ return s.replace(/[0-9A-Za-z가-힣]/g,'*'); }
+  function starDigitsPlain(s){ return s.replace(/\d/g,'*'); }
+
+  function maskDigitsPreserveFormat(s, keepLastN){
+    const digits=s.replace(/\D/g,''); const keep=Math.max(0,Math.min(keepLastN,digits.length));
+    const cutoff=digits.length-keep; let seen=0,out='';
+    for(const ch of s){ out+=/\d/.test(ch)?((seen++<cutoff)?'*':ch):ch; } return out;
+  }
+  function maskEmailPartial(s){
+    const at=s.indexOf('@'); if(at<=0) return '***';
+    const local=s.slice(0,at), domain=s.slice(at+1);
+    const stars='*'.repeat(Math.max(3,Math.min(local.length,6))); return `${stars}@${domain}`;
+  }
+
+  function maskByModePlain(type,text,mode){
+    if(mode==='partial'){
+      switch(type){
+        case 'EMAIL': return maskEmailPartial(text);
+        case 'PHONE': return maskDigitsPreserveFormat(text,3);
+        case 'AMOUNT': return starDigitsPlain(text);
+        case 'POSTCODE': return starPlain(text);
+        case 'ADDRESS': return starPlain(text);
+        default: return starPlain(text);
+      }
+    }
+    if(mode==='token') return `[${type}]`;
+    return (type==='AMOUNT') ? starDigitsPlain(text) : starPlain(text);
+  }
+
+  function applyMask(pageText, mode){
+    const matches=[];
+    for (const { re, token } of RULES) {
+      re.lastIndex = 0; let m;
+      while ((m = re.exec(pageText)) !== null) {
+        if (token === 'ADDRESS_LINE') {
+          const lineStart = pageText.lastIndexOf('\n', m.index) + 1;
+          const nextNL = pageText.indexOf('\n', m.index);
+          const lineEnd = (nextNL === -1) ? pageText.length : nextNL;
+          matches.push({ start: lineStart, end: lineEnd, text: pageText.slice(lineStart, lineEnd), token: 'ADDRESS' });
+        } else {
+          matches.push({ start: m.index, end: m.index + m[0].length, text: m[0], token });
+        }
+      }
+    }
+    if (!matches.length) return { maskedPlain: pageText, counts:{} };
+
+    matches.sort((a,b)=> a.start - b.start);
+    const compact=[]; let lastEnd = -1;
+    for (const m of matches) { if (m.start >= lastEnd) { compact.push(m); lastEnd = m.end; } }
+
+    let out='', cursor=0, counts={};
+    for (const m of compact) {
+      if (cursor < m.start) out += pageText.slice(cursor, m.start);
+      const masked = maskByModePlain(m.token, m.text, mode);
+      out += masked;
+      counts[m.token] = (counts[m.token] || 0) + 1;
+      cursor = m.end;
+    }
+    out += pageText.slice(cursor);
+    return { maskedPlain: out, counts };
+  }
+
+  async function extractTextPages(file){
+    const name=(file.name||'').toLowerCase();
+    const isPDF=name.endsWith('.pdf')||file.type==='application/pdf';
+    if(!isPDF){ return [await file.text()]; }
+    try {
       const buf=await file.arrayBuffer();
       const pdf=await pdfjsLib.getDocument({data:buf}).promise;
       const pages=[];
-      for(let p=1;p<=pdf.numPages;p++){
+      for (let p=1; p<=pdf.numPages; p++){
         const page=await pdf.getPage(p);
         const content=await page.getTextContent();
-        const text=content.items.map(i=>i.str).join(' ')+'\n';
+        const text=(content.items||[]).map(i=>i.str||'').join(' ')+'\n';
         pages.push(text);
       }
       return pages;
+    } catch (err) {
+      console.error('PDF 파싱 실패, 텍스트로 폴백:', err);
+      try { const textFallback = await file.text(); return [textFallback]; }
+      catch { throw new Error('PDF를 읽을 수 없습니다. 로컬 서버에서 실행하거나 TXT로 테스트해보세요.'); }
     }
+  }
 
-    const $=id=>document.getElementById(id);
+  /* ---------- Dropbox 업로드 ---------- */
+  async function uploadToDropbox({ token, folder, filename, content }) {
+    if (!token) throw new Error('Dropbox access token이 필요합니다.');
+    if (!folder) folder = '/';
+    if (!folder.startsWith('/')) folder = '/' + folder;
+
+    const path = (folder === '/' ? '' : folder) + '/' + filename;
+
+    const apiArg = {
+      path,
+      mode: 'add',
+      autorename: true,
+      mute: false,
+      strict_conflict: false
+    };
+
+    const resp = await fetch('https://content.dropboxapi.com/2/files/upload', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/octet-stream',
+        'Dropbox-API-Arg': JSON.stringify(apiArg),
+      },
+      body: new Blob([content], { type: 'text/plain;charset=utf-8' })
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text().catch(()=> '');
+      throw new Error('Dropbox 업로드 실패: ' + resp.status + ' ' + text);
+    }
+    return resp.json();
+  }
+
+  /* ---------- UI 바인딩 ---------- */
+  document.addEventListener('DOMContentLoaded', () => {
+    const $ = id => document.getElementById(id);
     let lastMaskedAll='';
 
     function renderStats(countsAll){
@@ -204,7 +391,8 @@
       if(!keys.length){ stats.innerHTML='<span class="muted">탐지된 항목 없음</span>'; return; }
       for(const k of keys){
         const chip=document.createElement('span');
-        chip.className='chip'; chip.textContent=`${k}: ${countsAll[k]}`;
+        chip.className='chip';
+        chip.textContent=`${k}: ${countsAll[k]}`;
         stats.appendChild(chip);
       }
     }
@@ -213,7 +401,7 @@
       const file=($('fileInput').files||[])[0];
       if(!file) return alert('파일을 선택하세요.');
       $('pages').innerHTML='<div class="page"><div class="preview">처리 중...</div></div>';
-      $('btnCopy').disabled=true; $('btnDownload').disabled=true;
+      $('btnSend').disabled=true;
 
       try{
         const pages=await extractTextPages(file);
@@ -222,42 +410,46 @@
 
         $('pages').innerHTML='';
         pages.forEach((t,idx)=>{
-          const {maskedHTML, maskedPlain, counts}=applyMask(t,mode);
+          const {maskedPlain, counts}=applyMask(t,mode);
           for(const k in counts) allCounts[k]=(allCounts[k]||0)+counts[k];
 
-          const page=document.createElement('div');
-          page.className='page';
-          const h=document.createElement('h3'); h.textContent=`페이지 ${idx+1}`;
-          const pre=document.createElement('div'); pre.className='preview';
-          pre.innerHTML = maskedHTML;        // 화면: 빨간 별표 포함 HTML
-          page.appendChild(h); page.appendChild(pre);
-          $('pages').appendChild(page);
+          const prettyHTML = buildStructuredHTML(maskedPlain);
 
-          joined.push(maskedPlain);          // 복사/다운: 일반 별표 버전
+          const page=document.createElement('div'); page.className='page';
+          const h=document.createElement('h3'); h.textContent=`페이지 ${idx+1}`;
+          const pre=document.createElement('div'); pre.className='preview'; pre.innerHTML=prettyHTML;
+          page.appendChild(h); page.appendChild(pre); $('pages').appendChild(page);
+
+          joined.push(maskedPlain);
         });
+
         lastMaskedAll=joined.join('\n---- PAGE SEP ----\n');
         renderStats(allCounts);
-        $('btnCopy').disabled=false; $('btnDownload').disabled=false;
+        $('btnSend').disabled=false;
       }catch(e){
         console.error(e);
         $('pages').innerHTML='<div class="page"><div class="preview">오류: '+(e?.message||e)+'</div></div>';
       }
     });
 
-    $('btnCopy').addEventListener('click',async()=>{
-      if(!lastMaskedAll) return;
-      try{await navigator.clipboard.writeText(lastMaskedAll); alert('마스킹 텍스트가 복사되었습니다.');}
-      catch{alert('복사 권한을 허용해주세요.');}
-    });
+    $('btnSend').addEventListener('click', async ()=>{
+      if(!lastMaskedAll) return alert('먼저 “처리하기”로 결과를 생성하세요.');
+      const now = new Date(); const pad = n => String(n).padStart(2,'0');
+      const fname = `masked-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.txt`;
 
-    $('btnDownload').addEventListener('click',()=>{
-      if(!lastMaskedAll) return;
-      const blob=new Blob([lastMaskedAll],{type:'text/plain;charset=utf-8'});
-      const url=URL.createObjectURL(blob);
-      const a=document.createElement('a'); a.href=url; a.download='masked.txt';
-      document.body.appendChild(a); a.click();
-      setTimeout(()=>{URL.revokeObjectURL(url); document.body.removeChild(a);},0);
+      const btn = $('btnSend');
+      btn.disabled = true; btn.textContent = '전송 중…';
+      try{
+        await uploadToDropbox({ token: DROPBOX_TOKEN, folder: DROPBOX_FOLDER, filename: fname, content: lastMaskedAll });
+        alert('Dropbox로 전송되었습니다:\n' + (DROPBOX_FOLDER.endsWith('/') ? DROPBOX_FOLDER + fname : DROPBOX_FOLDER + '/' + fname));
+      }catch(e){
+        console.error(e);
+        alert('전송 실패: ' + (e?.message || e));
+      }finally{
+        btn.disabled = false; btn.textContent = '보내기 (Dropbox)';
+      }
     });
-  </script>
+  });
+</script>
 </body>
 </html>
