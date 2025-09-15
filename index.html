@@ -40,44 +40,44 @@
 </head>
 <body>
 <div class="container">
-  <h1>마스킹 결과 미리보기</h1>
-  <div class="muted">넘버링 기준 섹션 분리 · 주소/연락처/이메일/금액 마스킹. 결과를 Dropbox로 전송할 수 있습니다.</div>
+  <h1>Preview Masked Results</h1>
+  <div class="muted">Numbered Sections · Mask Addresses, Contacts, Emails & Amounts</div>
 
   <div class="controls box">
     <div class="field">
-      <label for="fileInput">파일 선택 (PDF/TXT)</label>
+      <label for="fileInput">Choose File (PDF/TXT)</label>
       <input type="file" id="fileInput" accept=".pdf,.txt,text/plain,application/pdf" />
     </div>
 
     <div class="field">
-      <label for="mode">마스킹 모드</label>
+      <label for="mode">Masking Mode</label>
       <select id="mode">
-        <option value="stars" selected>별표치환(*)</option>
-        <option value="partial">부분마스킹(끝자리 보존)</option>
-        <option value="token">토큰치환([EMAIL])</option>
+        <option value="stars" selected>Asterisk Masking(*)</option>
+        <option value="partial">Partial Masking (Preserve Last Digits)</option>
+        <option value="token">Token Replacement ([EMAIL])</option>
       </select>
     </div>
 
     <div class="field">
       <label>&nbsp;</label>
-      <button id="btnProcess" type="button">처리하기</button>
+      <button id="btnProcess" type="button">Process</button>
     </div>
 
     <div class="field">
       <label>&nbsp;</label>
-      <button id="btnSend" type="button" disabled>보내기 (Dropbox)</button>
+      <button id="btnSend" type="button" disabled>Send</button>
     </div>
   </div>
 
   <div class="box">
-    <b>태그 통계</b>
+    <b>Tag Statistics</b>
     <div id="stats" class="chips"></div>
   </div>
 
   <div id="pages" class="box">
     <div class="page">
-      <h3>미리보기</h3>
-      <div class="preview">파일을 선택한 뒤 “처리하기”를 눌러주세요.</div>
+      <h3>Preview</h3>
+      <div class="preview">Please select a file and then click 'Process'.</div>
     </div>
   </div>
 </div>
