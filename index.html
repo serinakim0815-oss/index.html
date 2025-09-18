@@ -2,17 +2,23 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <title>Masked-only Preview — Numbered Sections + Dropbox Upload (No Inputs)</title>
+  <title>Masked-only Preview — Numbered Sections + Dropbox Upload (Refresh Token)</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     :root { color-scheme: light; }
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; line-height: 1.75; color:#222; }
-    .container { max-width: 960px; margin: 0 auto; }
+    .container { max-width: 1040px; margin: 0 auto; }
     h1 { font-size: 22px; margin-bottom: 8px; }
-    .controls { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin:14px 0; }
+    .controls { display:grid; grid-template-columns: repeat(12, 1fr); gap:10px; align-items:end; margin:14px 0; }
     .field { display:flex; flex-direction:column; gap:6px; }
     .field label { font-size:12px; color:#555; }
-    input[type="file"], select { padding:8px 12px; border:1px solid #ddd; border-radius:10px; background:#fff; }
+    .span-4 { grid-column: span 4; min-width: 220px; }
+    .span-3 { grid-column: span 3; min-width: 180px; }
+    .span-2 { grid-column: span 2; min-width: 140px; }
+
+    input[type="file"], select, input[type="text"], input[type="email"] {
+      padding:8px 12px; border:1px solid #ddd; border-radius:10px; background:#fff;
+    }
     button { padding:10px 14px; border:1px solid #ddd; border-radius:10px; background:#fff; cursor:pointer; }
     button:hover { filter:brightness(0.98); }
     .box { border:1px solid #eee; border-radius:14px; padding:14px; margin:14px 0; background:#fff; }
@@ -30,6 +36,7 @@
     .chip { background:#f4f6ff; border:1px solid #e1e6ff; border-radius:999px; padding:4px 8px; font-size:12px; }
     .red { color: red; }
   </style>
+  <!-- pdf.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script>
     if (window.pdfjsLib) {
@@ -41,15 +48,20 @@
 <body>
 <div class="container">
   <h1>Preview Masked Results</h1>
-  <div class="muted">Numbered Sections · Mask Addresses, Contacts, Emails & Amounts</div>
+  <div class="muted">Numbered Sections · Mask Addresses, Contacts, Emails & Amounts · Dropbox Upload (auto refresh)</div>
 
   <div class="controls box">
-    <div class="field">
+    <div class="field span-4">
       <label for="fileInput">Choose File (PDF/TXT)</label>
       <input type="file" id="fileInput" accept=".pdf,.txt,text/plain,application/pdf" />
     </div>
 
-    <div class="field">
+    <div class="field span-3">
+      <label for="email">Client Email (**Required field)</label>
+      <input type="email" id="email" placeholder="client@example.com" />
+    </div>
+
+    <div class="field span-3">
       <label for="mode">Masking Mode</label>
       <select id="mode">
         <option value="stars" selected>Asterisk Masking(*)</option>
@@ -58,14 +70,14 @@
       </select>
     </div>
 
-    <div class="field">
+    <div class="field span-2">
       <label>&nbsp;</label>
       <button id="btnProcess" type="button">Process</button>
     </div>
 
-    <div class="field">
+    <div class="field span-2">
       <label>&nbsp;</label>
-      <button id="btnSend" type="button" disabled>Send</button>
+      <button id="btnSend" type="button" disabled>Send (Dropbox)</button>
     </div>
   </div>
 
@@ -83,11 +95,7 @@
 </div>
 
 <script>
-  /* ====== 하드코딩된 Dropbox 설정 (테스트/내부용 전용) ====== */
-  const DROPBOX_TOKEN  = 'sl.u.AF-Ua30BJiHZFBQUOFN5t3BJRQ3FOK5rcOgPLDn00PrX2UonEcAHN4MxmrocMrY4oxnnwlCOXVbHDJXSDuCNswT_64EFW9TFcAQ9UdWBuTdO___vC3A6B6GslKr4zn3UTKbQ0uSylWDEVuAaJbxnLS_w8IYajk2xLnvsStiJUuYQXz-WvIBY4q9xvF2gFvV95Jt2x7iHhEtplzBonNmVgU7Ker77I4I4z7MUVPtMbdZEYg47IvfzKfyemvwuDsdlnwzXe9-kqv7bkW4S9IctxjH4gMGr1JcZqi6kDnwQFbBwYy5aygemxbDeJv2uUqFTSjfiaU0z2WXZhpKvwi2ofmI4Pu-Sf7GROjA1T98A-T7s-DKHkZhzEOMu9MLpQkMHyuCdG3__cu8gIzNoFTOfyWsQpHDRc-6cq2ejcDycQ6iw8TYFLKOhqB7G_lFStAF3J8G-Z25OC330UNf5iAcFlibxp_vutMmLv4MARsDAY8UCuVfbMgby6-Hoa4coJUpEc1jGIQsPCsalZIVQ9QJWrweFT7TBS12u7gqY80fw3n19Y0FY5gJkDTqxcF5FV3AJ9EtyPPWOcd4mKavJe8Py9UuhZaR4CvGHOLPthJw-bu--Od2vddbUu-koflshTyMl1v4064rHin7ludxZqYLrkbTWjJjKVEtXofPjqqvAyl8cITIGcpYxTB65vcS4e0ERK2lkhBZ02EdyR2Vu0V8rxTm7gMQgtD8NUJQu8keFSIGVbF_af6RGQQWX3yJ_lUBol_YCgqmUfhZjB3P1dEAJ5AP1ZCK_pcUPpr1MRhnDER0d3dF3ZxlzTtS5e6SGryHVEqAhmLj4Yp16MpWZeTjMXjA6MGsFYfJqZ1sTrtmKLi0LEoR0KlO1y7RTbj45M9rXsOEqeTmg5nEfO_wXvzVA6IndOGDZ7FJo8t0rXkT3NSaHYPnVp7QSC210Q6Bc1Bb6oH6ulKsYadmX1QEn9JM5hAW8lKfHtg8sKEGhPTeH8ozD5P_M8x5y9l-re2SyTAlSLqLXo1ybW0Sjqt_pad5MXHPv6FqSwooBJRdbKUGNAmCQ7a5F8WIKaDyzVT03_My5ARQCEYFwfaqbI5VNDaEq8mavD6Sa3S3liFodFjHbsdnckGGfEq6J7K-xk7DJI7JvpAFN1h2ZE_62csz9-GXbzahlRho52Uhp4qrom83WnPfng8skrwsGf_NVg0gRlfi4WIcheadJLhMKzgxCBXxh71-VDEqjEUi6WaRZhUrZJEaRuHHW7KKHjWHnmFf6S4RJ5hANnrr9KU8fEfUeMsEPvPhgstLU4_45HEs22qSCSqsMcwfygUs8wc8F3J7t6LUx9VlfHwnPAYJfGXbtImnjBACReo6rJlTSz-8dCRiBsnnEM1wf2h7wOT4E71SEvTQ-DwXBHD568UUuvBthdvJI6V4eqpeqtXjfP0xeKSuf39BIHd-2a3sQOFvixtcUhqMKwK2XcKMJ88iMvbfxcaVlPTaO';
-  const DROPBOX_FOLDER = '/AIR140925'; // 업로드 대상 폴더(절대경로)
-
-  /* ---------- 전역 에러 노출 ---------- */
+  /* ---------- Global Error ---------- */
   window.addEventListener('error', (e) => {
     const pages = document.getElementById('pages');
     if (pages) {
@@ -98,11 +106,20 @@
     console.error('Global Error:', e.error || e.message || e);
   });
 
-  /* ---------- 유틸 ---------- */
-  function escapeHTML(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
-  function paintStars(htmlEscaped) { return htmlEscaped.replace(/\*/g, '<span class="red">*</span>'); }
+  /* ---------- Utils ---------- */
+  const escapeHTML = (s) => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const paintStars = (htmlEscaped) => htmlEscaped.replace(/\*/g, '<span class="red">*</span>');
 
-  /* ---------- 넘버링 기반 구조화 렌더러 ---------- */
+  function sanitizeEmailForFilename(email) {
+    if (!email) return 'no-email';
+    return email.trim().toLowerCase()
+      .replace(/@/g, '_at_')
+      .replace(/\+/g, '_plus_')
+      .replace(/[^a-z0-9._-]/g, '_')  // keep safe chars only
+      .slice(0, 80) || 'invalid-email';
+  }
+
+  /* ---------- Structured Renderer ---------- */
   function buildStructuredHTML(maskedPlain) {
     const normalized = maskedPlain
       .replace(/\u00A0|\u202F/g, ' ')
@@ -126,21 +143,12 @@
         const num = String(m[1]).trim();
         const titleInline = (m[2] || '').trim();
         current = { num, title: '', body: [] };
-        if (titleInline) {
-          current.title = titleInline;
-          waitingTitleFor = null;
-        } else {
-          waitingTitleFor = current;
-        }
+        if (titleInline) { current.title = titleInline; waitingTitleFor = null; }
+        else { waitingTitleFor = current; }
         continue;
       }
 
-      if (waitingTitleFor && line.trim()) {
-        waitingTitleFor.title = line.trim();
-        waitingTitleFor = null;
-        continue;
-      }
-
+      if (waitingTitleFor && line.trim()) { waitingTitleFor.title = line.trim(); waitingTitleFor = null; continue; }
       if (!current) current = { num: null, title: '기타', body: [] };
       current.body.push(line);
     }
@@ -151,43 +159,24 @@
     const labelRegex = /^\s*([\p{L}\p{N}()[\]\/\-\s.]+?)\s*[:：]\s*(.+)$/u;
 
     function renderBody(lines) {
-      const blocks = [];
-      let i = 0;
+      const blocks = []; let i = 0;
       while (i < lines.length) {
         const line = lines[i];
-
         if (orderedRegex.test(line)) {
-          const items = [];
-          while (i < lines.length && orderedRegex.test(lines[i])) {
-            items.push(lines[i].replace(orderedRegex, ''));
-            i++;
-          }
+          const items = []; while (i < lines.length && orderedRegex.test(lines[i])) { items.push(lines[i].replace(orderedRegex, '')); i++; }
           blocks.push('<ol>' + items.map(t => '<li>' + paintStars(escapeHTML(t)) + '</li>').join('') + '</ol>');
           continue;
         }
-
         if (bulletRegex.test(line)) {
-          const items = [];
-          while (i < lines.length && bulletRegex.test(lines[i])) {
-            items.push(lines[i].replace(bulletRegex, ''));
-            i++;
-          }
+          const items = []; while (i < lines.length && bulletRegex.test(lines[i])) { items.push(lines[i].replace(bulletRegex, '')); i++; }
           blocks.push('<ul>' + items.map(t => '<li>' + paintStars(escapeHTML(t)) + '</li>').join('') + '</ul>');
           continue;
         }
-
         const kv = line.match(labelRegex);
-        if (kv) {
-          const label = kv[1], value = kv[2];
-          blocks.push('<p><strong>' + paintStars(escapeHTML(label + ':')) + '</strong> ' + paintStars(escapeHTML(value)) + '</p>');
-          i++;
-          continue;
-        }
-
+        if (kv) { const label = kv[1], value = kv[2]; blocks.push('<p><strong>' + paintStars(escapeHTML(label + ':')) + '</strong> ' + paintStars(escapeHTML(value)) + '</p>'); i++; continue; }
         const buf = [line]; i++;
         while (i < lines.length && !orderedRegex.test(lines[i]) && !bulletRegex.test(lines[i]) && !labelRegex.test(lines[i])) {
-          if (!lines[i].trim()) break;
-          buf.push(lines[i]); i++;
+          if (!lines[i].trim()) break; buf.push(lines[i]); i++;
         }
         blocks.push('<p>' + paintStars(escapeHTML(buf.join(' '))) + '</p>');
       }
@@ -197,20 +186,16 @@
     return sections.map(sec => {
       let html = '<div class="section">';
       const safeTitle = sec.title && sec.title.trim() ? sec.title : '';
-      if (sec.num && safeTitle) {
-        html += `<h4>${sec.num}. ${paintStars(escapeHTML(safeTitle))}</h4>`;
-      } else if (sec.num) {
-        html += `<h4>${sec.num}.</h4>`;
-      } else {
-        html += `<h4>${paintStars(escapeHTML(safeTitle || 'Misc'))}</h4>`;
-      }
+      if (sec.num && safeTitle) html += `<h4>${sec.num}. ${paintStars(escapeHTML(safeTitle))}</h4>`;
+      else if (sec.num) html += `<h4>${sec.num}.</h4>`;
+      else html += `<h4>${paintStars(escapeHTML(safeTitle || 'Misc'))}</h4>`;
       if (sec.body.length) html += renderBody(sec.body);
       html += '</div>';
       return html;
     }).join('\n');
   }
 
-  /* ---------- 탐지 정규식 (보강판) ---------- */
+  /* ---------- Detection Rules ---------- */
   const EMAIL = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
   const PHONE_GENERIC = /\+?\d[\d\s().-]{6,}\d/g;
   const PHONE_AU = /(\+?61\s?)?0?4\d{2}[\s-]?\d{3}[\s-]?\d{3}\b/g;
@@ -219,34 +204,19 @@
   const POSTCODE_KR = /\b\d{5}\b/g;
   const POSTCODE_AU = /\b\d{4}\b/g;
 
-  const ADDRESS_KR_STREET_ANYWHERE =
-    /(?:[가-힣]{2,}(시|도|특별시|광역시)\s*)?(?:[가-힣]{2,}(구|군)\s*)?[가-힣0-9\- ]{1,30}(동|읍|면|리|로|길|번길|대로|가)\s*[0-9\-]+(?:호|층)?/g;
-
-  const ADDRESS_KR_BUILDING_ANYWHERE =
-    /(아파트|빌딩|타워|오피스텔|상가|단지|레지던스|주상복합|주공|자이|래미안|힐스테이트|아이파크)[^\n]{0,80}?(동|호|층|호수|호실)/g;
-
-  const ADDRESS_LABEL_LINE =
-    /^(?=.{4,240}$).*?(주소\s*:|Address\s*:)[^\n]*$/gmi;
-
-  const ADDRESS_AU_FULL =
-    /\b\d{1,5}[A-Za-z0-9\-]*\s+[A-Za-z][A-Za-z.'\- ]+\s(?:St|Street|Rd|Road|Ave|Avenue|Blvd|Boulevard|Dr|Drive|Lane|Ln|Way|Pl|Place|Ct|Court|Cres|Crescent|Hwy|Highway)\b[^\n,]*,\s*[A-Za-z][A-Za-z.'\- ]+\s+(NSW|VIC|QLD|SA|WA|TAS|NT|ACT)\s+\d{4}\b/gi;
-
-  const ADDRESS_AU_UNIT =
-    /\b(Unit|Suite|Apt|Apartment|Level|Lvl|Lot|Flat|Room|Bldg|Building|Tower|Block|Blk)\s*[A-Za-z0-9\-]+(?:\/\d{1,5})?\s*[A-Za-z0-9\- ]{0,10}\s+[A-Za-z][A-Za-z.'\- ]+\s(?:St|Street|Rd|Road|Ave|Avenue|Blvd|Boulevard|Dr|Drive|Lane|Ln|Way|Pl|Place|Ct|Court|Cres|Crescent|Hwy|Highway)\b[^\n,]*,\s*[A-Za-z][A-Za-z.'\- ]+\s+(NSW|VIC|QLD|SA|WA|TAS|NT|ACT)\s+\d{4}\b/gi;
-
-  const ADDRESS_AU_SUBURB_STATE_PC =
-    /\b[A-Za-z][A-Za-z.'\- ]+\s+(NSW|VIC|QLD|SA|WA|TAS|NT|ACT)\s+\d{4}\b/gi;
-
-  const ADDRESS_KR_STREET_LINE =
-    /^(?=.{6,240}$).*?(시|도|특별시|광역시).*(구|군).*(동|읍|면|리|로|길|번길|대로|가|번지).*\d.*$/gmi;
-
-  const ADDRESS_EN_STREET_LINE =
-    /^(?=.{8,240}$).*?\b\d{1,5}[A-Za-z0-9\-]*\s+[A-Za-z0-9.'\- ]+\b(St|Street|Rd|Road|Ave|Avenue|Blvd|Boulevard|Dr|Drive|Lane|Ln|Way|Pl|Place|Ct|Court|Cres|Crescent|Hwy|Highway)\b.*?(?:\b(NSW|VIC|QLD|SA|WA|TAS|NT|ACT)\b| \d{4}\b)?.*$/gmi;
+  const ADDRESS_KR_STREET_ANYWHERE = /(?:[가-힣]{2,}(시|도|특별시|광역시)\s*)?(?:[가-힣]{2,}(구|군)\s*)?[가-힣0-9\- ]{1,30}(동|읍|면|리|로|길|번길|대로|가)\s*[0-9\-]+(?:호|층)?/g;
+  const ADDRESS_KR_BUILDING_ANYWHERE = /(아파트|빌딩|타워|오피스텔|상가|단지|레지던스|주상복합|주공|자이|래미안|힐스테이트|아이파크)[^\n]{0,80}?(동|호|층|호수|호실)/g;
+  const ADDRESS_LABEL_LINE = /^(?=.{4,240}$).*?(주소\s*:|Address\s*:)[^\n]*$/gmi;
+  const ADDRESS_AU_FULL = /\b\d{1,5}[A-Za-z0-9\-]*\s+[A-Za-z][A-Za-z.'\- ]+\s(?:St|Street|Rd|Road|Ave|Avenue|Blvd|Boulevard|Dr|Drive|Lane|Ln|Way|Pl|Place|Ct|Court|Cres|Crescent|Hwy|Highway)\b[^\n,]*,\s*[A-Za-z][A-Za-z.'\- ]+\s+(NSW|VIC|QLD|SA|WA|TAS|NT|ACT)\s+\d{4}\b/gi;
+  const ADDRESS_AU_UNIT = /\b(Unit|Suite|Apt|Apartment|Level|Lvl|Lot|Flat|Room|Bldg|Building|Tower|Block|Blk)\s*[A-Za-z0-9\-]+(?:\/\d{1,5})?\s*[A-Za-z0-9\- ]{0,10}\s+[A-Za-z][A-Za-z.'\- ]+\s(?:St|Street|Rd|Road|Ave|Avenue|Blvd|Boulevard|Dr|Drive|Lane|Ln|Way|Pl|Place|Ct|Court|Cres|Crescent|Hwy|Highway)\b[^\n,]*,\s*[A-Za-z][A-Za-z.'\- ]+\s+(NSW|VIC|QLD|SA|WA|TAS|NT|ACT)\s+\d{4}\b/gi;
+  const ADDRESS_AU_SUBURB_STATE_PC = /\b[A-Za-z][A-Za-z.'\- ]+\s+(NSW|VIC|QLD|SA|WA|TAS|NT|ACT)\s+\d{4}\b/gi;
+  const ADDRESS_KR_STREET_LINE = /^(?=.{6,240}$).*?(시|도|특별시|광역시).*(구|군).*(동|읍|면|리|로|길|번길|대로|가|번지).*\d.*$/gmi;
+  const ADDRESS_EN_STREET_LINE = /^(?=.{8,240}$).*?\b\d{1,5}[A-Za-z0-9\-]*\s+[A-Za-z0-9.'\- ]+\b(St|Street|Rd|Road|Ave|Avenue|Blvd|Boulevard|Dr|Drive|Lane|Ln|Way|Pl|Place|Ct|Court|Cres|Crescent|Hwy|Highway)\b.*?(?:\b(NSW|VIC|QLD|SA|WA|TAS|NT|ACT)\b| \d{4}\b)?.*$/gmi;
 
   const RULES = [
-    { re: ADDRESS_LABEL_LINE,        token: 'ADDRESS_LINE' },
-    { re: ADDRESS_KR_STREET_LINE,    token: 'ADDRESS_LINE' },
-    { re: ADDRESS_EN_STREET_LINE,    token: 'ADDRESS_LINE' },
+    { re: ADDRESS_LABEL_LINE,        token: 'ADDRESS' },
+    { re: ADDRESS_KR_STREET_LINE,    token: 'ADDRESS' },
+    { re: ADDRESS_EN_STREET_LINE,    token: 'ADDRESS' },
 
     { re: ADDRESS_KR_STREET_ANYWHERE,   token: 'ADDRESS' },
     { re: ADDRESS_KR_BUILDING_ANYWHERE, token: 'ADDRESS' },
@@ -265,17 +235,8 @@
 
   function starPlain(s){ return s.replace(/[0-9A-Za-z가-힣]/g,'*'); }
   function starDigitsPlain(s){ return s.replace(/\d/g,'*'); }
-
-  function maskDigitsPreserveFormat(s, keepLastN){
-    const digits=s.replace(/\D/g,''); const keep=Math.max(0,Math.min(keepLastN,digits.length));
-    const cutoff=digits.length-keep; let seen=0,out='';
-    for(const ch of s){ out+=/\d/.test(ch)?((seen++<cutoff)?'*':ch):ch; } return out;
-  }
-  function maskEmailPartial(s){
-    const at=s.indexOf('@'); if(at<=0) return '***';
-    const local=s.slice(0,at), domain=s.slice(at+1);
-    const stars='*'.repeat(Math.max(3,Math.min(local.length,6))); return `${stars}@${domain}`;
-  }
+  function maskDigitsPreserveFormat(s, keepLastN){ const digits=s.replace(/\D/g,''); const keep=Math.max(0,Math.min(keepLastN,digits.length)); const cutoff=digits.length-keep; let seen=0,out=''; for(const ch of s){ out+=/\d/.test(ch)?((seen++<cutoff)?'*':ch):ch; } return out; }
+  function maskEmailPartial(s){ const at=s.indexOf('@'); if(at<=0) return '***'; const local=s.slice(0,at), domain=s.slice(at+1); const stars='*'.repeat(Math.max(3,Math.min(local.length,6))); return `${stars}@${domain}`; }
 
   function maskByModePlain(type,text,mode){
     if(mode==='partial'){
@@ -296,16 +257,7 @@
     const matches=[];
     for (const { re, token } of RULES) {
       re.lastIndex = 0; let m;
-      while ((m = re.exec(pageText)) !== null) {
-        if (token === 'ADDRESS_LINE') {
-          const lineStart = pageText.lastIndexOf('\n', m.index) + 1;
-          const nextNL = pageText.indexOf('\n', m.index);
-          const lineEnd = (nextNL === -1) ? pageText.length : nextNL;
-          matches.push({ start: lineStart, end: lineEnd, text: pageText.slice(lineStart, lineEnd), token: 'ADDRESS' });
-        } else {
-          matches.push({ start: m.index, end: m.index + m[0].length, text: m[0], token });
-        }
-      }
+      while ((m = re.exec(pageText)) !== null) { matches.push({ start: m.index, end: m.index + m[0].length, text: m[0], token }); }
     }
     if (!matches.length) return { maskedPlain: pageText, counts:{} };
 
@@ -317,9 +269,7 @@
     for (const m of compact) {
       if (cursor < m.start) out += pageText.slice(cursor, m.start);
       const masked = maskByModePlain(m.token, m.text, mode);
-      out += masked;
-      counts[m.token] = (counts[m.token] || 0) + 1;
-      cursor = m.end;
+      out += masked; counts[m.token] = (counts[m.token] || 0) + 1; cursor = m.end;
     }
     out += pageText.slice(cursor);
     return { maskedPlain: out, counts };
@@ -328,7 +278,22 @@
   async function extractTextPages(file){
     const name=(file.name||'').toLowerCase();
     const isPDF=name.endsWith('.pdf')||file.type==='application/pdf';
+
+    // If not PDF, simple text read
     if(!isPDF){ return [await file.text()]; }
+
+    // If pdf.js not ready, fallback to text
+    if (!window.pdfjsLib || !pdfjsLib.getDocument) {
+      try { return [await file.text()]; } catch(e){ throw new Error('PDF.js 로더가 준비되지 않았습니다. TXT로 테스트해보세요.'); }
+    }
+
+    // Ensure workerSrc set right before use
+    try {
+      if (!pdfjsLib.GlobalWorkerOptions?.workerSrc) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      }
+    } catch (_) { /* ignore */ }
+
     try {
       const buf=await file.arrayBuffer();
       const pdf=await pdfjsLib.getDocument({data:buf}).promise;
@@ -343,44 +308,21 @@
     } catch (err) {
       console.error('PDF 파싱 실패, 텍스트로 폴백:', err);
       try { const textFallback = await file.text(); return [textFallback]; }
-      catch { throw new Error('PDF를 읽을 수 없습니다. 로컬 서버에서 실행하거나 TXT로 테스트해보세요.'); }
+      catch { throw new Error('PDF를 읽을 수 없습니다. 서버에서 열거나 TXT로 테스트해보세요.'); }
     }
   }
 
-  /* ---------- Dropbox 업로드 ---------- */
-  async function uploadToDropbox({ token, folder, filename, content }) {
-    if (!token) throw new Error('Dropbox access token이 필요합니다.');
-    if (!folder) folder = '/';
-    if (!folder.startsWith('/')) folder = '/' + folder;
-
-    const path = (folder === '/' ? '' : folder) + '/' + filename;
-
-    const apiArg = {
-      path,
-      mode: 'add',
-      autorename: true,
-      mute: false,
-      strict_conflict: false
-    };
-
-    const resp = await fetch('https://content.dropboxapi.com/2/files/upload', {
+  // ---------- Client → Serverless upload ----------
+  async function uploadViaApi({ folder, filename, content, emailRaw }) {
+    const res = await fetch('/api/upload', {
       method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + token,
-        'Content-Type': 'application/octet-stream',
-        'Dropbox-API-Arg': JSON.stringify(apiArg),
-      },
-      body: new Blob([content], { type: 'text/plain;charset=utf-8' })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folder, filename, content, email: emailRaw || null })
     });
-
-    if (!resp.ok) {
-      const text = await resp.text().catch(()=> '');
-      throw new Error('Dropbox 업로드 실패: ' + resp.status + ' ' + text);
-    }
-    return resp.json();
+    if (!res.ok) { const msg = await res.text().catch(()=> ''); throw new Error('업로드 실패: ' + res.status + ' ' + msg); }
+    return res.json();
   }
 
-  /* ---------- UI 바인딩 ---------- */
   document.addEventListener('DOMContentLoaded', () => {
     const $ = id => document.getElementById(id);
     let lastMaskedAll='';
@@ -389,21 +331,16 @@
       const stats=$('stats'); stats.innerHTML='';
       const keys=Object.keys(countsAll).filter(k=>countsAll[k]>0);
       if(!keys.length){ stats.innerHTML='<span class="muted">탐지된 항목 없음</span>'; return; }
-      for(const k of keys){
-        const chip=document.createElement('span');
-        chip.className='chip';
-        chip.textContent=`${k}: ${countsAll[k]}`;
-        stats.appendChild(chip);
-      }
+      for(const k of keys){ const chip=document.createElement('span'); chip.className='chip'; chip.textContent=`${k}: ${countsAll[k]}`; stats.appendChild(chip); }
     }
 
     $('btnProcess').addEventListener('click', async ()=>{
       const file=($('fileInput').files||[])[0];
-      if(!file) return alert('파일을 선택하세요.');
-      $('pages').innerHTML='<div class="page"><div class="preview">처리 중...</div></div>';
-      $('btnSend').disabled=true;
+      if(!file) { alert('파일을 선택하세요.'); return; }
+      try {
+        $('pages').innerHTML='<div class="page"><div class="preview">처리 중...</div></div>';
+        $('btnSend').disabled=true;
 
-      try{
         const pages=await extractTextPages(file);
         const mode=$('mode').value;
         let allCounts={}, joined=[];
@@ -412,46 +349,109 @@
         pages.forEach((t,idx)=>{
           const {maskedPlain, counts}=applyMask(t,mode);
           for(const k in counts) allCounts[k]=(allCounts[k]||0)+counts[k];
-
           const prettyHTML = buildStructuredHTML(maskedPlain);
-
           const page=document.createElement('div'); page.className='page';
-          const h=document.createElement('h3'); h.textContent=`페이지 ${idx+1}`;
+          const h=document.createElement('h3'); h.textContent=`Page ${idx+1}`;
           const pre=document.createElement('div'); pre.className='preview'; pre.innerHTML=prettyHTML;
           page.appendChild(h); page.appendChild(pre); $('pages').appendChild(page);
-
           joined.push(maskedPlain);
         });
 
         lastMaskedAll=joined.join('\n---- PAGE SEP ----\n');
         renderStats(allCounts);
         $('btnSend').disabled=false;
-      }catch(e){
+      } catch(e){
         console.error(e);
         $('pages').innerHTML='<div class="page"><div class="preview">오류: '+(e?.message||e)+'</div></div>';
+        $('btnSend').disabled=true;
       }
     });
 
     $('btnSend').addEventListener('click', async ()=>{
       if(!lastMaskedAll) return alert('먼저 “처리하기”로 결과를 생성하세요.');
+      const emailRaw = $('email').value.trim();
+      const emailSafe = sanitizeEmailForFilename(emailRaw);
+
       const now = new Date(); const pad = n => String(n).padStart(2,'0');
-      const fname = `masked-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.txt`;
+      const fname = `masked-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}--${emailSafe}.txt`;
 
       const btn = $('btnSend');
       btn.disabled = true; btn.textContent = '전송 중…';
       try{
-        await uploadToDropbox({ token: DROPBOX_TOKEN, folder: DROPBOX_FOLDER, filename: fname, content: lastMaskedAll });
-        alert('Dropbox로 전송되었습니다:\n' + (DROPBOX_FOLDER.endsWith('/') ? DROPBOX_FOLDER + fname : DROPBOX_FOLDER + '/' + fname));
-      }catch(e){
-        console.error(e);
-        alert('전송 실패: ' + (e?.message || e));
-      }finally{
-        btn.disabled = false; btn.textContent = '보내기 (Dropbox)';
-      }
+        // Folder can be omitted to use server default (DROPBOX_FOLDER_DEFAULT)
+        const json = await uploadViaApi({ folder: null, filename: fname, content: lastMaskedAll, emailRaw });
+        alert('Dropbox로 전송되었습니다:\n' + (json?.path_display || json?.path || fname));
+      }catch(e){ console.error(e); alert('전송 실패: ' + (e?.message || e)); }
+      finally{ btn.disabled = false; btn.textContent = 'Send (Dropbox)'; }
     });
   });
 </script>
+
+<!-- ===============================
+      /api/upload.js (Vercel Serverless Function)
+     =============================== -->
+<script type="text/plain" data-filename="api/upload.js">
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
+  try {
+    const { folder, filename, content, email } = req.body || {};
+    if (!filename || !content) return res.status(400).send('filename, content required');
+
+    const FOLDER = folder || process.env.DROPBOX_FOLDER_DEFAULT || '/';
+
+    // 1) Exchange Refresh Token → Access Token
+    const tokenResp = await fetch('https://api.dropbox.com/oauth2/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': 'Basic ' + Buffer.from(`${process.env.DROPBOX_APP_KEY}:${process.env.DROPBOX_APP_SECRET}`).toString('base64')
+      },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: process.env.DROPBOX_REFRESH_TOKEN
+      }).toString()
+    });
+
+    if (!tokenResp.ok) {
+      const text = await tokenResp.text();
+      return res.status(500).send('Failed to refresh Dropbox token: ' + text);
+    }
+    const tokenJson = await tokenResp.json();
+    const accessToken = tokenJson.access_token;
+
+    // 2) Upload content
+    const safeFolder = FOLDER.startsWith('/') ? FOLDER : ('/' + FOLDER);
+    const path = (safeFolder === '/' ? '' : safeFolder) + '/' + filename;
+
+    const uploadResp = await fetch('https://content.dropboxapi.com/2/files/upload', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + accessToken,
+        'Content-Type': 'application/octet-stream',
+        'Dropbox-API-Arg': JSON.stringify({
+          path,
+          mode: 'add',
+          autorename: true,
+          mute: false,
+          strict_conflict: false
+        })
+      },
+      body: Buffer.from(content, 'utf8')
+    });
+
+    if (!uploadResp.ok) {
+      const text = await uploadResp.text();
+      return res.status(500).send('Dropbox upload failed: ' + text);
+    }
+
+    const uploaded = await uploadResp.json();
+    return res.status(200).json(uploaded);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).send('Server error: ' + (err?.message || err));
+  }
+}
+</script>
+
 </body>
 </html>
-
-
