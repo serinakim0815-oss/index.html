@@ -20,11 +20,12 @@
       padding:8px 12px; border:1px solid #ddd; border-radius:10px; background:#fff;
     }
     button { padding:10px 14px; border:1px solid #ddd; border-radius:10px; background:#fff; cursor:pointer; }
-    button:hover { filter:brightness(0.98); }
+    button:disabled { opacity:0.5; cursor:not-allowed; }
+    button:hover:enabled { filter:brightness(0.98); }
     .box { border:1px solid #eee; border-radius:14px; padding:14px; margin:14px 0; background:#fff; }
     .page { margin:14px 0 18px; }
     .page h3 { margin:0 0 10px; font-size:15px; color:#444; }
-    .preview { background:#fafafa; border:1px solid #eee; border-radius:12px; padding:18px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+    .preview { background:#fafafa; border:1px solid #eee; border-radius:12px; padding:18px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); white-space:pre-wrap; }
     .preview p { margin:0 0 12px; }
     .preview h4 { font-size:16px; margin:16px 0 8px; color:#222; }
     .preview ul, .preview ol { margin: 0 0 12px 22px; padding: 0; }
@@ -35,8 +36,11 @@
     .chips { display:flex; gap:8px; flex-wrap:wrap; margin:6px 0 0; }
     .chip { background:#f4f6ff; border:1px solid #e1e6ff; border-radius:999px; padding:4px 8px; font-size:12px; }
     .red { color: red; }
+    /* brand logo */
+    .brand { display:flex; justify-content:center; align-items:center; margin: 10px 0 12px; }
+    .brand img { max-height: 80px; width: auto; max-width: 100%; }
+    .center { text-align:center; }
   </style>
-  <!-- pdf.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script>
     if (window.pdfjsLib) {
@@ -47,8 +51,11 @@
 </head>
 <body>
 <div class="container">
-  <h1>Preview Masked Results</h1>
-  <div class="muted">Numbered Sections · Mask Addresses, Contacts, Emails & Amounts · Dropbox Upload (auto refresh)</div>
+  <div class="brand">
+    <img src="./mbaisystem_logo.jpg" alt="Company Logo" />
+  </div>
+  <h1 class="center">Preview Masked Results</h1>
+  <div class="muted center">Numbered Sections · Mask Addresses, Contacts, Emails & Amounts · Dropbox Upload (auto refresh)</div>
 
   <div class="controls box">
     <div class="field span-4">
@@ -57,8 +64,8 @@
     </div>
 
     <div class="field span-3">
-      <label for="email">Client Email (**Required field)</label>
-      <input type="email" id="email" placeholder="client@example.com" />
+      <label for="email">Client Email (필수, 파일명에 포함)</label>
+      <input type="email" id="email" placeholder="client@example.com" required />
     </div>
 
     <div class="field span-3">
@@ -95,363 +102,77 @@
 </div>
 
 <script>
-  /* ---------- Global Error ---------- */
-  window.addEventListener('error', (e) => {
-    const pages = document.getElementById('pages');
-    if (pages) {
-      pages.innerHTML = '<div class="page"><div class="preview">오류: '
-        + (e?.error?.message || e.message || '알 수 없는 오류')
-        + '</div></div>';
-    }
-    console.error('Global Error:', e.error || e.message || e);
-  });
+const escapeHTML = (s) => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 
-  /* ---------- Utils ---------- */
-  const escapeHTML = (s) => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-  const paintStars = (htmlEscaped) => htmlEscaped.replace(/\*/g, '<span class="red">*</span>');
-
-  function sanitizeEmailForFilename(email) {
-    if (!email) return 'no-email';
-    return email.trim().toLowerCase()
-      .replace(/@/g, '_at_')
-      .replace(/\+/g, '_plus_')
-      .replace(/[^a-z0-9._-]/g, '_')  // keep safe chars only
-      .slice(0, 80) || 'invalid-email';
+async function extractTextPages(file){
+  const name=(file.name||'').toLowerCase();
+  const isPDF=name.endsWith('.pdf')||file.type==='application/pdf';
+  if(!isPDF){ return [await file.text()]; }
+  if (!window.pdfjsLib || !pdfjsLib.getDocument) {
+    try { return [await file.text()]; } catch(e){ throw new Error('PDF.js 불러오기 실패'); }
   }
-
-  /* ---------- Structured Renderer ---------- */
-  function buildStructuredHTML(maskedPlain) {
-    const normalized = maskedPlain
-      .replace(/\u00A0|\u202F/g, ' ')
-      .replace(/[ \t]+\n/g, '\n')
-      .replace(/\n{3,}/g, '\n\n');
-
-    const lines = normalized.split(/\n/);
-    const numberRegex = /^\s*(?:\(?((?:\d{1,3}(?:\.\d{1,3})*|[IVXLCDM]+|[①-⑳]|[❶-❿]|[⓵-⓾]))\)?)[\.\)\-–—]?\s*(.*)$/i;
-
-    const sections = [];
-    let current = null;
-    let waitingTitleFor = null;
-
-    for (const raw of lines) {
-      const line = raw.trimEnd();
-      if (!line.trim()) continue;
-
-      const m = line.match(numberRegex);
-      if (m) {
-        if (current) sections.push(current);
-        const num = String(m[1]).trim();
-        const titleInline = (m[2] || '').trim();
-        current = { num, title: '', body: [] };
-        if (titleInline) { current.title = titleInline; waitingTitleFor = null; }
-        else { waitingTitleFor = current; }
-        continue;
-      }
-
-      if (waitingTitleFor && line.trim()) { waitingTitleFor.title = line.trim(); waitingTitleFor = null; continue; }
-      if (!current) current = { num: null, title: '기타', body: [] };
-      current.body.push(line);
-    }
-    if (current) sections.push(current);
-
-    const bulletRegex = /^\s*(?:[-•*]\s+|\u2022\s+|\u25CF\s+|\u25E6\s+)/;
-    const orderedRegex = /^\s*(\d+)\.\s+/;
-    const labelRegex = /^\s*([\p{L}\p{N}()[\]\/\-\s.]+?)\s*[:：]\s*(.+)$/u;
-
-    function renderBody(lines) {
-      const blocks = []; let i = 0;
-      while (i < lines.length) {
-        const line = lines[i];
-        if (orderedRegex.test(line)) {
-          const items = []; while (i < lines.length && orderedRegex.test(lines[i])) { items.push(lines[i].replace(orderedRegex, '')); i++; }
-          blocks.push('<ol>' + items.map(t => '<li>' + paintStars(escapeHTML(t)) + '</li>').join('') + '</ol>');
-          continue;
-        }
-        if (bulletRegex.test(line)) {
-          const items = []; while (i < lines.length && bulletRegex.test(lines[i])) { items.push(lines[i].replace(bulletRegex, '')); i++; }
-          blocks.push('<ul>' + items.map(t => '<li>' + paintStars(escapeHTML(t)) + '</li>').join('') + '</ul>');
-          continue;
-        }
-        const kv = line.match(labelRegex);
-        if (kv) { const label = kv[1], value = kv[2]; blocks.push('<p><strong>' + paintStars(escapeHTML(label + ':')) + '</strong> ' + paintStars(escapeHTML(value)) + '</p>'); i++; continue; }
-        const buf = [line]; i++;
-        while (i < lines.length && !orderedRegex.test(lines[i]) && !bulletRegex.test(lines[i]) && !labelRegex.test(lines[i])) {
-          if (!lines[i].trim()) break; buf.push(lines[i]); i++;
-        }
-        blocks.push('<p>' + paintStars(escapeHTML(buf.join(' '))) + '</p>');
-      }
-      return blocks.join('\n');
-    }
-
-    return sections.map(sec => {
-      let html = '<div class="section">';
-      const safeTitle = sec.title && sec.title.trim() ? sec.title : '';
-      if (sec.num && safeTitle) html += `<h4>${sec.num}. ${paintStars(escapeHTML(safeTitle))}</h4>`;
-      else if (sec.num) html += `<h4>${sec.num}.</h4>`;
-      else html += `<h4>${paintStars(escapeHTML(safeTitle || 'Misc'))}</h4>`;
-      if (sec.body.length) html += renderBody(sec.body);
-      html += '</div>';
-      return html;
-    }).join('\n');
-  }
-
-  /* ---------- Detection Rules ---------- */
-  const EMAIL = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
-  const PHONE_GENERIC = /\+?\d[\d\s().-]{6,}\d/g;
-  const PHONE_AU = /(\+?61\s?)?0?4\d{2}[\s-]?\d{3}[\s-]?\d{3}\b/g;
-  const PHONE_KR = /\b0(1[016789]|2|[3-6][1-5])[-\s.]?\d{3,4}[-\s.]?\d{4}\b/g;
-  const AMOUNT = /(?:₩\s*|KRW\s*|AUD\s*|USD\s*|\$)\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?:\s*원)?|\d{1,3}(?:,\d{3})+\s*원/gi;
-  const POSTCODE_KR = /\b\d{5}\b/g;
-  const POSTCODE_AU = /\b\d{4}\b/g;
-
-  const ADDRESS_KR_STREET_ANYWHERE = /(?:[가-힣]{2,}(시|도|특별시|광역시)\s*)?(?:[가-힣]{2,}(구|군)\s*)?[가-힣0-9\- ]{1,30}(동|읍|면|리|로|길|번길|대로|가)\s*[0-9\-]+(?:호|층)?/g;
-  const ADDRESS_KR_BUILDING_ANYWHERE = /(아파트|빌딩|타워|오피스텔|상가|단지|레지던스|주상복합|주공|자이|래미안|힐스테이트|아이파크)[^\n]{0,80}?(동|호|층|호수|호실)/g;
-  const ADDRESS_LABEL_LINE = /^(?=.{4,240}$).*?(주소\s*:|Address\s*:)[^\n]*$/gmi;
-  const ADDRESS_AU_FULL = /\b\d{1,5}[A-Za-z0-9\-]*\s+[A-Za-z][A-Za-z.'\- ]+\s(?:St|Street|Rd|Road|Ave|Avenue|Blvd|Boulevard|Dr|Drive|Lane|Ln|Way|Pl|Place|Ct|Court|Cres|Crescent|Hwy|Highway)\b[^\n,]*,\s*[A-Za-z][A-Za-z.'\- ]+\s+(NSW|VIC|QLD|SA|WA|TAS|NT|ACT)\s+\d{4}\b/gi;
-  const ADDRESS_AU_UNIT = /\b(Unit|Suite|Apt|Apartment|Level|Lvl|Lot|Flat|Room|Bldg|Building|Tower|Block|Blk)\s*[A-Za-z0-9\-]+(?:\/\d{1,5})?\s*[A-Za-z0-9\- ]{0,10}\s+[A-Za-z][A-Za-z.'\- ]+\s(?:St|Street|Rd|Road|Ave|Avenue|Blvd|Boulevard|Dr|Drive|Lane|Ln|Way|Pl|Place|Ct|Court|Cres|Crescent|Hwy|Highway)\b[^\n,]*,\s*[A-Za-z][A-Za-z.'\- ]+\s+(NSW|VIC|QLD|SA|WA|TAS|NT|ACT)\s+\d{4}\b/gi;
-  const ADDRESS_AU_SUBURB_STATE_PC = /\b[A-Za-z][A-Za-z.'\- ]+\s+(NSW|VIC|QLD|SA|WA|TAS|NT|ACT)\s+\d{4}\b/gi;
-  const ADDRESS_KR_STREET_LINE = /^(?=.{6,240}$).*?(시|도|특별시|광역시).*(구|군).*(동|읍|면|리|로|길|번길|대로|가|번지).*\d.*$/gmi;
-  const ADDRESS_EN_STREET_LINE = /^(?=.{8,240}$).*?\b\d{1,5}[A-Za-z0-9\-]*\s+[A-Za-z0-9.'\- ]+\b(St|Street|Rd|Road|Ave|Avenue|Blvd|Boulevard|Dr|Drive|Lane|Ln|Way|Pl|Place|Ct|Court|Cres|Crescent|Hwy|Highway)\b.*?(?:\b(NSW|VIC|QLD|SA|WA|TAS|NT|ACT)\b| \d{4}\b)?.*$/gmi;
-
-  const RULES = [
-    { re: ADDRESS_LABEL_LINE,        token: 'ADDRESS' },
-    { re: ADDRESS_KR_STREET_LINE,    token: 'ADDRESS' },
-    { re: ADDRESS_EN_STREET_LINE,    token: 'ADDRESS' },
-
-    { re: ADDRESS_KR_STREET_ANYWHERE,   token: 'ADDRESS' },
-    { re: ADDRESS_KR_BUILDING_ANYWHERE, token: 'ADDRESS' },
-    { re: ADDRESS_AU_FULL,              token: 'ADDRESS' },
-    { re: ADDRESS_AU_UNIT,              token: 'ADDRESS' },
-    { re: ADDRESS_AU_SUBURB_STATE_PC,   token: 'ADDRESS' },
-
-    { re: EMAIL,          token: 'EMAIL' },
-    { re: PHONE_AU,       token: 'PHONE' },
-    { re: PHONE_KR,       token: 'PHONE' },
-    { re: PHONE_GENERIC,  token: 'PHONE' },
-    { re: AMOUNT,         token: 'AMOUNT' },
-    { re: POSTCODE_KR,    token: 'POSTCODE' },
-    { re: POSTCODE_AU,    token: 'POSTCODE' },
-  ];
-
-  function starPlain(s){ return s.replace(/[0-9A-Za-z가-힣]/g,'*'); }
-  function starDigitsPlain(s){ return s.replace(/\d/g,'*'); }
-  function maskDigitsPreserveFormat(s, keepLastN){ const digits=s.replace(/\D/g,''); const keep=Math.max(0,Math.min(keepLastN,digits.length)); const cutoff=digits.length-keep; let seen=0,out=''; for(const ch of s){ out+=/\d/.test(ch)?((seen++<cutoff)?'*':ch):ch; } return out; }
-  function maskEmailPartial(s){ const at=s.indexOf('@'); if(at<=0) return '***'; const local=s.slice(0,at), domain=s.slice(at+1); const stars='*'.repeat(Math.max(3,Math.min(local.length,6))); return `${stars}@${domain}`; }
-
-  function maskByModePlain(type,text,mode){
-    if(mode==='partial'){
-      switch(type){
-        case 'EMAIL': return maskEmailPartial(text);
-        case 'PHONE': return maskDigitsPreserveFormat(text,3);
-        case 'AMOUNT': return starDigitsPlain(text);
-        case 'POSTCODE': return starPlain(text);
-        case 'ADDRESS': return starPlain(text);
-        default: return starPlain(text);
-      }
-    }
-    if(mode==='token') return `[${type}]`;
-    return (type==='AMOUNT') ? starDigitsPlain(text) : starPlain(text);
-  }
-
-  function applyMask(pageText, mode){
-    const matches=[];
-    for (const { re, token } of RULES) {
-      re.lastIndex = 0; let m;
-      while ((m = re.exec(pageText)) !== null) { matches.push({ start: m.index, end: m.index + m[0].length, text: m[0], token }); }
-    }
-    if (!matches.length) return { maskedPlain: pageText, counts:{} };
-
-    matches.sort((a,b)=> a.start - b.start);
-    const compact=[]; let lastEnd = -1;
-    for (const m of matches) { if (m.start >= lastEnd) { compact.push(m); lastEnd = m.end; } }
-
-    let out='', cursor=0, counts={};
-    for (const m of compact) {
-      if (cursor < m.start) out += pageText.slice(cursor, m.start);
-      const masked = maskByModePlain(m.token, m.text, mode);
-      out += masked; counts[m.token] = (counts[m.token] || 0) + 1; cursor = m.end;
-    }
-    out += pageText.slice(cursor);
-    return { maskedPlain: out, counts };
-  }
-
-  async function extractTextPages(file){
-    const name=(file.name||'').toLowerCase();
-    const isPDF=name.endsWith('.pdf')||file.type==='application/pdf';
-
-    // If not PDF, simple text read
-    if(!isPDF){ return [await file.text()]; }
-
-    // If pdf.js not ready, fallback to text
-    if (!window.pdfjsLib || !pdfjsLib.getDocument) {
-      try { return [await file.text()]; } catch(e){ throw new Error('PDF.js 로더가 준비되지 않았습니다. TXT로 테스트해보세요.'); }
-    }
-
-    // Ensure workerSrc set right before use
-    try {
-      if (!pdfjsLib.GlobalWorkerOptions?.workerSrc) {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-      }
-    } catch (_) { /* ignore */ }
-
-    try {
-      const buf=await file.arrayBuffer();
-      const pdf=await pdfjsLib.getDocument({data:buf}).promise;
-      const pages=[];
-      for (let p=1; p<=pdf.numPages; p++){
-        const page=await pdf.getPage(p);
-        const content=await page.getTextContent();
-        const text=(content.items||[]).map(i=>i.str||'').join(' ')+'\n';
-        pages.push(text);
-      }
-      return pages;
-    } catch (err) {
-      console.error('PDF 파싱 실패, 텍스트로 폴백:', err);
-      try { const textFallback = await file.text(); return [textFallback]; }
-      catch { throw new Error('PDF를 읽을 수 없습니다. 서버에서 열거나 TXT로 테스트해보세요.'); }
-    }
-  }
-
-  // ---------- Client → Serverless upload ----------
-  async function uploadViaApi({ folder, filename, content, emailRaw }) {
-    const res = await fetch('/api/upload', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ folder, filename, content, email: emailRaw || null })
-    });
-    if (!res.ok) { const msg = await res.text().catch(()=> ''); throw new Error('업로드 실패: ' + res.status + ' ' + msg); }
-    return res.json();
-  }
-
-  document.addEventListener('DOMContentLoaded', () => {
-    const $ = id => document.getElementById(id);
-    let lastMaskedAll='';
-
-    function renderStats(countsAll){
-      const stats=$('stats'); stats.innerHTML='';
-      const keys=Object.keys(countsAll).filter(k=>countsAll[k]>0);
-      if(!keys.length){ stats.innerHTML='<span class="muted">탐지된 항목 없음</span>'; return; }
-      for(const k of keys){ const chip=document.createElement('span'); chip.className='chip'; chip.textContent=`${k}: ${countsAll[k]}`; stats.appendChild(chip); }
-    }
-
-    $('btnProcess').addEventListener('click', async ()=>{
-      const file=($('fileInput').files||[])[0];
-      if(!file) { alert('파일을 선택하세요.'); return; }
-      try {
-        $('pages').innerHTML='<div class="page"><div class="preview">처리 중...</div></div>';
-        $('btnSend').disabled=true;
-
-        const pages=await extractTextPages(file);
-        const mode=$('mode').value;
-        let allCounts={}, joined=[];
-
-        $('pages').innerHTML='';
-        pages.forEach((t,idx)=>{
-          const {maskedPlain, counts}=applyMask(t,mode);
-          for(const k in counts) allCounts[k]=(allCounts[k]||0)+counts[k];
-          const prettyHTML = buildStructuredHTML(maskedPlain);
-          const page=document.createElement('div'); page.className='page';
-          const h=document.createElement('h3'); h.textContent=`Page ${idx+1}`;
-          const pre=document.createElement('div'); pre.className='preview'; pre.innerHTML=prettyHTML;
-          page.appendChild(h); page.appendChild(pre); $('pages').appendChild(page);
-          joined.push(maskedPlain);
-        });
-
-        lastMaskedAll=joined.join('\n---- PAGE SEP ----\n');
-        renderStats(allCounts);
-        $('btnSend').disabled=false;
-      } catch(e){
-        console.error(e);
-        $('pages').innerHTML='<div class="page"><div class="preview">오류: '+(e?.message||e)+'</div></div>';
-        $('btnSend').disabled=true;
-      }
-    });
-
-    $('btnSend').addEventListener('click', async ()=>{
-      if(!lastMaskedAll) return alert('먼저 “처리하기”로 결과를 생성하세요.');
-      const emailRaw = $('email').value.trim();
-      const emailSafe = sanitizeEmailForFilename(emailRaw);
-
-      const now = new Date(); const pad = n => String(n).padStart(2,'0');
-      const fname = `masked-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}--${emailSafe}.txt`;
-
-      const btn = $('btnSend');
-      btn.disabled = true; btn.textContent = '전송 중…';
-      try{
-        // Folder can be omitted to use server default (DROPBOX_FOLDER_DEFAULT)
-        const json = await uploadViaApi({ folder: null, filename: fname, content: lastMaskedAll, emailRaw });
-        alert('Dropbox로 전송되었습니다:\n' + (json?.path_display || json?.path || fname));
-      }catch(e){ console.error(e); alert('전송 실패: ' + (e?.message || e)); }
-      finally{ btn.disabled = false; btn.textContent = 'Send (Dropbox)'; }
-    });
-  });
-</script>
-
-<!-- ===============================
-      /api/upload.js (Vercel Serverless Function)
-     =============================== -->
-<script type="text/plain" data-filename="api/upload.js">
-export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
   try {
-    const { folder, filename, content, email } = req.body || {};
-    if (!filename || !content) return res.status(400).send('filename, content required');
-
-    const FOLDER = folder || process.env.DROPBOX_FOLDER_DEFAULT || '/';
-
-    // 1) Exchange Refresh Token → Access Token
-    const tokenResp = await fetch('https://api.dropbox.com/oauth2/token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': 'Basic ' + Buffer.from(`${process.env.DROPBOX_APP_KEY}:${process.env.DROPBOX_APP_SECRET}`).toString('base64')
-      },
-      body: new URLSearchParams({
-        grant_type: 'refresh_token',
-        refresh_token: process.env.DROPBOX_REFRESH_TOKEN
-      }).toString()
-    });
-
-    if (!tokenResp.ok) {
-      const text = await tokenResp.text();
-      return res.status(500).send('Failed to refresh Dropbox token: ' + text);
+    if (!pdfjsLib.GlobalWorkerOptions?.workerSrc) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
-    const tokenJson = await tokenResp.json();
-    const accessToken = tokenJson.access_token;
-
-    // 2) Upload content
-    const safeFolder = FOLDER.startsWith('/') ? FOLDER : ('/' + FOLDER);
-    const path = (safeFolder === '/' ? '' : safeFolder) + '/' + filename;
-
-    const uploadResp = await fetch('https://content.dropboxapi.com/2/files/upload', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + accessToken,
-        'Content-Type': 'application/octet-stream',
-        'Dropbox-API-Arg': JSON.stringify({
-          path,
-          mode: 'add',
-          autorename: true,
-          mute: false,
-          strict_conflict: false
-        })
-      },
-      body: Buffer.from(content, 'utf8')
-    });
-
-    if (!uploadResp.ok) {
-      const text = await uploadResp.text();
-      return res.status(500).send('Dropbox upload failed: ' + text);
+    const buf=await file.arrayBuffer();
+    const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    const pages=[];
+    for (let p=1; p<=pdf.numPages; p++){
+      const page=await pdf.getPage(p);
+      const content=await page.getTextContent();
+      const text=(content.items||[]).map(i=>i.str||'').join(' ')+'\n';
+      pages.push(text);
     }
-
-    const uploaded = await uploadResp.json();
-    return res.status(200).json(uploaded);
+    return pages;
   } catch (err) {
-    console.error(err);
-    return res.status(500).send('Server error: ' + (err?.message || err));
+    console.error('PDF 파싱 실패:', err);
+    try { const textFallback = await file.text(); return [textFallback]; }
+    catch { throw new Error('PDF를 읽을 수 없습니다.'); }
   }
 }
-</script>
 
+function buildStructuredHTML(txt){
+  return escapeHTML(txt);
+}
+
+(function(){
+  const $ = id=>document.getElementById(id);
+  let lastMaskedAll='';
+
+  function checkEmailValidity(){
+    const emailField = $('email');
+    const sendBtn = $('btnSend');
+    if (emailField && sendBtn){
+      if (emailField.validity.valid && emailField.value.trim() !== '' && lastMaskedAll){
+        sendBtn.disabled=false;
+      } else {
+        sendBtn.disabled=true;
+      }
+    }
+  }
+
+  $('email').addEventListener('input', checkEmailValidity);
+
+  $('btnProcess').addEventListener('click', async()=>{
+    const file=($('fileInput').files||[])[0];
+    if(!file){ alert('파일 선택 필요'); return; }
+    $('pages').innerHTML='<div class="page"><div class="preview">처리중...</div></div>';
+    const pages=await extractTextPages(file);
+    let joined=[];
+    $('pages').innerHTML='';
+    pages.forEach((t,idx)=>{
+      const page=document.createElement('div'); page.className='page';
+      const h=document.createElement('h3'); h.textContent='페이지 '+(idx+1);
+      const pre=document.createElement('div'); pre.className='preview'; pre.innerHTML=buildStructuredHTML(t);
+      page.appendChild(h); page.appendChild(pre); $('pages').appendChild(page);
+      joined.push(t);
+    });
+    lastMaskedAll=joined.join('\n---- PAGE SEP ----\n');
+    window.lastMaskedAll=lastMaskedAll;
+    checkEmailValidity();
+  });
+})();
+</script>
 </body>
 </html>
