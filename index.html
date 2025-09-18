@@ -50,11 +50,13 @@
 </head>
 <body>
 <div class="container">
+  <div class="brand">
+  <img src="https://logo-hosting-5p9byhrdc-serinas-projects-e4fabcba.vercel.app/mbaisystem_logo.jpg" alt="Company Logo">
  <div class="brand">
 <img src="./mbaisystem_logo.jpg" alt="Company Logo" />
 </div>
   <h1>Preview Masked Results</h1>
-  <div class="muted">Numbered Sections · Mask Addresses, Contacts, Emails & Amounts</div>
+  <div class="muted">Numbered Sections · Mask Addresses, Contacts, Emails & Amounts · Dropbox Upload (auto refresh)</div>
 
   <div class="controls box">
     <div class="field span-4">
@@ -105,8 +107,8 @@
   window.addEventListener('error', (e) => {
     const pages = document.getElementById('pages');
     if (pages) {
-      pages.innerHTML = '<div class="page"><div class="preview">error: '
-        + (e?.error?.message || e.message || 'Unknown error.')
+      pages.innerHTML = '<div class="page"><div class="preview">오류: '
+        + (e?.error?.message || e.message || '알 수 없는 오류')
         + '</div></div>';
     }
     console.error('Global Error:', e.error || e.message || e);
@@ -155,7 +157,7 @@
       }
 
       if (waitingTitleFor && line.trim()) { waitingTitleFor.title = line.trim(); waitingTitleFor = null; continue; }
-      if (!current) current = { num: null, title: 'Other', body: [] };
+      if (!current) current = { num: null, title: '기타', body: [] };
       current.body.push(line);
     }
     if (current) sections.push(current);
@@ -290,7 +292,7 @@
 
     // If pdf.js not ready, fallback to text
     if (!window.pdfjsLib || !pdfjsLib.getDocument) {
-      try { return [await file.text()]; } catch(e){ throw new Error('PDF.js loader is not ready. Please test with TXT instead.'); }
+      try { return [await file.text()]; } catch(e){ throw new Error('PDF.js 로더가 준비되지 않았습니다. TXT로 테스트해보세요.'); }
     }
 
     // Ensure workerSrc set right before use
@@ -312,9 +314,9 @@
       }
       return pages;
     } catch (err) {
-      console.error('PDF parsing failed, falling back to text.:', err);
+      console.error('PDF 파싱 실패, 텍스트로 폴백:', err);
       try { const textFallback = await file.text(); return [textFallback]; }
-      catch { throw new Error('The PDF cannot be opened. Please try opening it on the server or test with a TXT file instead.'); }
+      catch { throw new Error('PDF를 읽을 수 없습니다. 서버에서 열거나 TXT로 테스트해보세요.'); }
     }
   }
 
@@ -325,7 +327,7 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ folder, filename, content, email: emailRaw || null })
     });
-    if (!res.ok) { const msg = await res.text().catch(()=> ''); throw new Error('Upload failed: ' + res.status + ' ' + msg); }
+    if (!res.ok) { const msg = await res.text().catch(()=> ''); throw new Error('업로드 실패: ' + res.status + ' ' + msg); }
     return res.json();
   }
 
@@ -336,15 +338,15 @@
     function renderStats(countsAll){
       const stats=$('stats'); stats.innerHTML='';
       const keys=Object.keys(countsAll).filter(k=>countsAll[k]>0);
-      if(!keys.length){ stats.innerHTML='<span class="muted">No items detected</span>'; return; }
+      if(!keys.length){ stats.innerHTML='<span class="muted">탐지된 항목 없음</span>'; return; }
       for(const k of keys){ const chip=document.createElement('span'); chip.className='chip'; chip.textContent=`${k}: ${countsAll[k]}`; stats.appendChild(chip); }
     }
 
     $('btnProcess').addEventListener('click', async ()=>{
       const file=($('fileInput').files||[])[0];
-      if(!file) { alert('Choose a file.'); return; }
+      if(!file) { alert('파일을 선택하세요.'); return; }
       try {
-        $('pages').innerHTML='<div class="page"><div class="preview">Processing...</div></div>';
+        $('pages').innerHTML='<div class="page"><div class="preview">처리 중...</div></div>';
         $('btnSend').disabled=true;
 
         const pages=await extractTextPages(file);
@@ -374,7 +376,7 @@
     });
 
     $('btnSend').addEventListener('click', async ()=>{
-      if(!lastMaskedAll) return alert('First, click 'Process' to generate the result.');
+      if(!lastMaskedAll) return alert('먼저 “처리하기”로 결과를 생성하세요.');
       const emailRaw = $('email').value.trim();
       const emailSafe = sanitizeEmailForFilename(emailRaw);
 
@@ -382,12 +384,12 @@
       const fname = `masked-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}--${emailSafe}.txt`;
 
       const btn = $('btnSend');
-      btn.disabled = true; btn.textContent = 'Sending…';
+      btn.disabled = true; btn.textContent = '전송 중…';
       try{
         // Folder can be omitted to use server default (DROPBOX_FOLDER_DEFAULT)
         const json = await uploadViaApi({ folder: null, filename: fname, content: lastMaskedAll, emailRaw });
-        alert('Successfully sent.:\n' + (json?.path_display || json?.path || fname));
-      }catch(e){ console.error(e); alert('Send failed: ' + (e?.message || e)); }
+        alert('Dropbox로 전송되었습니다:\n' + (json?.path_display || json?.path || fname));
+      }catch(e){ console.error(e); alert('전송 실패: ' + (e?.message || e)); }
       finally{ btn.disabled = false; btn.textContent = 'Send (Dropbox)'; }
     });
   });
@@ -461,7 +463,3 @@ export default async function handler(req, res) {
 
 </body>
 </html>
-
-
-
-
