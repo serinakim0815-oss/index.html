@@ -35,6 +35,9 @@
     .chips { display:flex; gap:8px; flex-wrap:wrap; margin:6px 0 0; }
     .chip { background:#f4f6ff; border:1px solid #e1e6ff; border-radius:999px; padding:4px 8px; font-size:12px; }
     .red { color: red; }
+    /* brand logo (centered) */
+.brand { display:flex; justify-content:center; align-items:center; margin: 12px 0 16px; }
+.brand img { max-height: 80px; width: auto; height: auto; max-width: 100%; }
   </style>
   <!-- pdf.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -47,6 +50,9 @@
 </head>
 <body>
 <div class="container">
+  <div class="brand">
+  <img src="https://logo-hosting-5p9byhrdc-serinas-projects-e4fabcba.vercel.app/mbaisystem_logo.jpg" alt="Company Logo">
+</div>
   <h1>Preview Masked Results</h1>
   <div class="muted">Numbered Sections · Mask Addresses, Contacts, Emails & Amounts · Dropbox Upload (auto refresh)</div>
 
@@ -455,4 +461,5 @@ export default async function handler(req, res) {
 
 </body>
 </html>
+
 
